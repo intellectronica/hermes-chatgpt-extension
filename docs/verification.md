@@ -11,11 +11,13 @@ This records observed results, with native rendering separated from backend load
 
 ## Observed checks
 
-- TypeScript, bridge/config/HTTP/MCP, adapter protocol, frontend ownership/race/controls and installer checks pass locally. Final test totals and CI revision will be added at release close-out.
+- TypeScript, 40 Vitest checks and 9 installer checks pass locally. They cover bridge/config/HTTP/MCP, adapter protocol and frontend ownership/race/controls. The opt-in live SSH test passed separately on the final adapter (16.59 seconds).
 - Production dependency audit: no reported vulnerabilities after the patched Lodash override.
 - Live managed SSH: authenticated REST/WebSocket, profiles, saved-conversation metadata, profile/all-profile cron and run metadata succeeded against Fnordistan. Teardown removed the temporary backend; existing services remained active.
 - Native desktop-bundled Codex backend: plugin installed/enabled, 11 tools discovered, global/thread UI entrypoints and the exact built HTML resource loaded.
-- Browser UI starts and displays the real connection, profiles and cron inventory. Final layout and controlled conversation checks are being completed.
+- Browser UI displays the real connection, six profiles, 55 jobs across all profiles, cross-profile run history and the controlled echo conversation. The live echo streamed to an idle completion with the expected reply and no tool calls.
+- Browser light/dark layouts at 1440×900 and 390×844 fit their viewports; the composer stays visible. The mobile drawer traps focus, closes with Escape and restores the opener's focus. The final narrow transcript accessibility scan reports zero violations and zero incomplete checks (35 passed). Browser page errors are empty.
+- GitHub CI passed for implementation commit `55d7735220ba3a04f34274eaf2d6e1976566dcbd`: [run 36756732851](https://github.com/intellectronica/hermes-chatgpt-extension/actions/runs/36756732851). The workflow runs on every subsequent push and retains the compiled plugin as an artefact.
 
 ## Native GUI acceptance limitation
 

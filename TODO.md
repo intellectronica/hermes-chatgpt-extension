@@ -9,7 +9,7 @@
 - [x] Implement profile selection with explicit ownership and independent drafts.
 - [x] Implement read-only cron and run-history views.
 - [x] Verify protocol, security, failure/reconnect and profile-isolation behaviour.
-- [ ] Visually verify light/dark and narrow/wide layouts.
+- [x] Visually verify light/dark and narrow/wide layouts.
 - [x] Verify a real Hermes conversation and profile/cron reads.
 - [x] Verify native backend loading and document the exact GUI acceptance blocker; embedded rendering remains unverified.
-- [ ] Finish setup/usage documentation, push and pass GitHub CI.
+- [x] Finish setup/usage documentation, push and pass GitHub CI.
