@@ -1,0 +1,20 @@
+{
+  "name": "hermes-local",
+  "interface": {
+    "displayName": "Hermes local development"
+  },
+  "plugins": [
+    {
+      "name": "hermes-chatgpt-extension",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

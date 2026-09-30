@@ -1,0 +1,11 @@
+{
+  "connections": [
+    {
+      "id": "local",
+      "label": "Local Hermes",
+      "kind": "http",
+      "baseUrl": "http://127.0.0.1:9119",
+      "tokenEnv": "HERMES_LOCAL_TOKEN"
+    }
+  ]
+}
