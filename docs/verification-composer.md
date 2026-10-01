@@ -26,7 +26,7 @@ The existing 98px desktop height, 22px corners, 28px send circle and 8px trailin
 
 ## Installed package
 
-The guarded replacement and supported `codex plugin add hermes-chatgpt-extension@personal --json` completed at 15:39 UTC. Native listing reports version 0.2.3, installed and enabled. Recoverable source and marketplace backups end in `2026-10-01T15-39-20-078Z-26650b56`. The existing configuration reference and unrelated marketplace entry are preserved.
+The guarded replacement and supported `codex plugin add hermes-chatgpt-extension@personal --json` completed at 15:39 UTC. Native listing reports version 0.2.3, installed and enabled. Recoverable source and marketplace backups end in `2026-10-01T15-39-20-078Z-26650b56`. The existing configuration reference and marketplace fields are preserved. The marketplace contains one Hermes entry and no unrelated entries.
 
 A fresh bundled Codex app-server process reports Hermes 0.2.3, 14 tools, both theme icons, global/thread entrypoints and app-only model/archive controls. Its read of `ui://hermes/v0.2.3/app-942f4cae4231a6fa.html` matches the exact built HTML. The owned verifier process was closed; no Hermes prompt, setting change or job was invoked.
 
