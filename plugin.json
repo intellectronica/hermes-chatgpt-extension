@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hermes-chatgpt-extension",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Chat with one or more Hermes instances over SSH or HTTP, switch profiles and inspect scheduled jobs inside Codex.",
   "author": {
     "name": "intellectronica",

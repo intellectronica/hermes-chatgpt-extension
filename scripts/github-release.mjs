@@ -47,6 +47,25 @@ async function githubCommand(args, { allowMissing = false } = {}) {
   }
 }
 
+/** Resolve the explicit tag reference, including annotated tags, without branch-name ambiguity. */
+export async function resolveGithubTag({ repository, tag, run = githubCommand }) {
+  assert.match(repository ?? '', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+  assert.match(tag ?? '', /^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/);
+  const api = `repos/${repository}`;
+  const json = async endpoint => JSON.parse((await run(['api', endpoint])).toString());
+  const reference = await json(`${api}/git/ref/tags/${tag}`);
+  assert.equal(reference.ref, `refs/tags/${tag}`, 'GitHub did not return the requested tag reference.');
+  let object = reference.object;
+  for (let depth = 0; object?.type === 'tag'; depth++) {
+    assert.ok(depth < 5, 'Too many nested annotated tags.');
+    assert.match(object.sha ?? '', /^[a-f0-9]{40}$/, 'Invalid annotated tag SHA.');
+    object = (await json(`${api}/git/tags/${object.sha}`)).object;
+  }
+  assert.equal(object?.type, 'commit', 'The release tag must resolve to a commit.');
+  assert.match(object.sha ?? '', /^[a-f0-9]{40}$/, 'Invalid release commit SHA.');
+  return object.sha;
+}
+
 /** Resume partial uploads, but never replace an existing release asset. */
 export async function publishGithubRelease({ repository, tag, commit, assets, notesFile, run = githubCommand }) {
   assert.match(repository ?? '', /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'GITHUB_REPOSITORY must identify the release repository.');
@@ -64,8 +83,8 @@ export async function publishGithubRelease({ repository, tag, commit, assets, no
     return bytes === null ? null : JSON.parse(bytes.toString());
   };
   const verifyTagCommit = async () => {
-    const remote = await json(['api', `${api}/commits/${encodeURIComponent(`tags/${tag}`)}`]);
-    assert.equal(remote.sha, commit, 'The remote release tag no longer points to the checked-out commit.');
+    const remote = await resolveGithubTag({ repository, tag, run });
+    assert.equal(remote, commit, 'The remote release tag no longer points to the checked-out commit.');
   };
   const getRelease = async () => {
     // REST's tag lookup excludes drafts. The CLI also looks up drafts through GraphQL.

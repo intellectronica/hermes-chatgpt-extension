@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { test } from 'node:test';
-import { publishGithubRelease, validateReleaseTag } from './github-release.mjs';
+import { publishGithubRelease, resolveGithubTag, validateReleaseTag } from './github-release.mjs';
 import { sha256 } from './package-release.mjs';
 
 const name = 'hermes-chatgpt-extension', tag = 'v0.3.0', commit = 'a'.repeat(40);
@@ -29,7 +29,7 @@ test('release versions accept prereleases and reject unsafe or invalid identifie
 });
 
 function scenario({ existing = null, initial = [], immutable = false, conflict = false, incomplete = false,
-  corruptUpload = false, moved = false, outage = false } = {}) {
+  corruptUpload = false, moved = false, annotated = false, moveAfterUpload = false, outage = false } = {}) {
   const bytes = new Map(), calls = [];
   const assets = [`${name}-0.3.0.zip`, `${name}-0.3.0-source.zip`, 'SHA256SUMS'].map(name => {
     const content = Buffer.from(`Known release fixture ${name}\n`);
@@ -56,9 +56,14 @@ function scenario({ existing = null, initial = [], immutable = false, conflict =
       return Buffer.from(JSON.stringify({ databaseId: 123 }));
     }
     if (args[0] === 'api') {
-      if (args[1].includes('/commits/')) {
-        assert.equal(args[1], 'repos/example/hermes/commits/tags%2Fv0.3.0');
-        return Buffer.from(JSON.stringify({ sha: moved ? 'b'.repeat(40) : commit }));
+      const currentCommit = moved || moveAfterUpload && bytes.size > 0 ? 'b'.repeat(40) : commit;
+      if (args[1] === 'repos/example/hermes/git/ref/tags/v0.3.0') {
+        return Buffer.from(JSON.stringify({ ref: `refs/tags/${tag}`,
+          object: annotated ? { type: 'tag', sha: 'c'.repeat(40) } : { type: 'commit', sha: currentCommit } }));
+      }
+      if (args[1] === `repos/example/hermes/git/tags/${'c'.repeat(40)}`) {
+        assert.equal(annotated, true);
+        return Buffer.from(JSON.stringify({ object: { type: 'commit', sha: currentCommit } }));
       }
       if (args[1] === 'repos/example/hermes/releases/123') {
         assert.ok(release);
@@ -113,6 +118,30 @@ test('new releases remain drafts until all uploaded bytes have been verified', a
   assert.equal(fixture.calls.filter(args => args[1]?.includes('/releases/assets/')).length, 3);
 });
 
+test('annotated release tags are peeled through the Git tag API before publication', async () => {
+  const fixture = scenario({ annotated: true });
+  await fixture.publish();
+  assert.equal(fixture.release.draft, false);
+  assert.equal(fixture.calls.filter(args => args[1] === `repos/example/hermes/git/tags/${'c'.repeat(40)}`).length, 2);
+  assert.ok(!fixture.calls.some(args => args[1]?.includes('/commits/')));
+});
+
+test('invalid and cyclic tag objects fail through bounded, explicit reference lookup', async () => {
+  for (const object of [{ type: 'tree', sha: commit }, { type: 'tag', sha: 'c'.repeat(40) }]) {
+    let reads = 0;
+    const run = async args => {
+      reads++;
+      if (args[1] === `repos/example/hermes/git/ref/tags/${tag}`) {
+        return Buffer.from(JSON.stringify({ ref: `refs/tags/${tag}`, object }));
+      }
+      assert.equal(args[1], `repos/example/hermes/git/tags/${'c'.repeat(40)}`);
+      return Buffer.from(JSON.stringify({ object }));
+    };
+    await assert.rejects(resolveGithubTag({ repository: 'example/hermes', tag, run }), /resolve to a commit|nested annotated tags/);
+    assert.ok(reads <= 6);
+  }
+});
+
 test('a retry resumes a partial draft and uploads only missing assets', async () => {
   const fixture = scenario({ existing: 'draft', initial: [`${name}-0.3.0.zip`] });
   await fixture.publish();
@@ -153,6 +182,13 @@ test('existing corrupt or incomplete assets are preserved and block further uplo
 test('an upload with wrong bytes is never published', async () => {
   const fixture = scenario({ corruptUpload: true });
   await assert.rejects(fixture.publish(), /differs/);
+  assert.equal(fixture.release.draft, true);
+  assert.equal(fixture.calls.some(args => args[1] === 'edit'), false);
+});
+
+test('a tag moved during upload leaves the verified packages in a draft', async () => {
+  const fixture = scenario({ moveAfterUpload: true });
+  await assert.rejects(fixture.publish(), /no longer points/);
   assert.equal(fixture.release.draft, true);
   assert.equal(fixture.calls.some(args => args[1] === 'edit'), false);
 });
