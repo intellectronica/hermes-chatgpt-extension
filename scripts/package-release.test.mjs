@@ -80,7 +80,8 @@ async function fixture() {
     await put(root, `scripts/${name}`, await readFile(fileURLToPath(new URL(name, import.meta.url))));
   }
   for (const name of ['.gitignore', '.env.example', 'AGENTS.md', 'TODO.md', 'package-lock.json', 'tsconfig.json',
-    'vitest.config.ts', '.github/workflows/ci.yml', 'scripts/build.mjs', 'scripts/bundle-licenses.mjs',
+    'vitest.config.ts', '.github/workflows/ci.yml', '.github/workflows/release.yml', 'scripts/build.mjs', 'scripts/bundle-licenses.mjs',
+    'scripts/github-release.mjs', 'scripts/github-release.test.mjs',
     'scripts/package-release.mjs', 'scripts/release-zip.mjs', 'scripts/verify-release.mjs',
     'scripts/install-plugin.test.mjs', 'scripts/package-release.test.mjs', 'scripts/bundle-licenses.test.mjs',
     'src/index.ts', 'tests/smoke.test.ts', 'docs/setup.md']) {

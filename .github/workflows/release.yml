@@ -1,0 +1,81 @@
+name: Release extension
+
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-release-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+  HERMES_LIVE_SSH_TEST: '0'
+  HERMES_NATIVE_LIVE_TEST: '0'
+
+jobs:
+  build:
+    name: Verify release (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Validate release version
+        run: node scripts/github-release.mjs check "$RELEASE_TAG"
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm run plugin:verify
+      - run: npm run release:package
+      - run: npm run release:verify
+      - run: npm audit --omit=dev
+      - uses: actions/upload-artifact@v4
+        if: matrix.node == '22'
+        with:
+          name: release-packages
+          path: |
+            release/*.zip
+            release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish verified ZIPs
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-packages
+          path: release
+      - name: Upload, verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/github-release.mjs publish "$RELEASE_TAG"

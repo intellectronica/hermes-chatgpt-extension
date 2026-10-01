@@ -27,13 +27,13 @@ This package provides a local stdio MCP server. It does not provide a hosted MCP
 
 ### From a prebuilt ZIP
 
-Extract the provided release ZIP and open a terminal in the extracted directory containing `plugin.json`.
+Download `hermes-chatgpt-extension-VERSION.zip` from the [latest GitHub release](https://github.com/intellectronica/hermes-chatgpt-extension/releases/latest). Extract it and open a terminal in the extracted directory containing `plugin.json`.
 
 ```sh
 node scripts/verify-plugin.mjs
 ```
 
-The ZIP includes the compiled server and self-contained UI. It needs Node.js, without an npm install or build. Continue with **Configure and register the plugin** below.
+The ZIP includes the compiled server and self-contained UI. It needs Node.js, without an npm install or build. Each release also provides a `-source.zip` and `SHA256SUMS` for checking both ZIPs. GitHub's automatically generated **Source code** downloads require a source build. Continue with **Configure and register the plugin** below.
 
 ### From source
 
@@ -260,6 +260,28 @@ npm run release:verify
 ```
 
 This creates a prebuilt plugin ZIP, a source ZIP and `SHA256SUMS` under `release/`. Both ZIPs contain only allowlisted files and an integrity manifest; they exclude Git history, private configuration, tokens, logs and local development outputs. Use the source ZIP to initialise a new repository with clean history when needed.
+
+### Publish a GitHub release
+
+The [Release extension workflow](.github/workflows/release.yml) runs when a `vMAJOR.MINOR.PATCH` tag is pushed. The tag must match `package.json`, `plugin.json` and both root version fields in `package-lock.json`. Prerelease tags such as `v0.4.0-rc.1` are supported and produce prereleases.
+
+To release a new version:
+
+1. Update the package version with `npm version VERSION --no-git-tag-version`, then set the same version in `plugin.json`. Commit and push the version change, and wait for CI to pass.
+2. Tag that commit and push the tag:
+
+   ```sh
+   git tag -a vVERSION -m "Hermes vVERSION"
+   git push origin vVERSION
+   ```
+
+3. Wait for **Release extension** in GitHub Actions. It checks types, runs tests, builds, audits production dependencies and verifies both packages on Node.js 22 and 24. The Node.js 22 build supplies the release assets.
+
+The workflow creates a draft, uploads the installable ZIP, source ZIP and `SHA256SUMS`, downloads and verifies their bytes, then publishes the release. It uses GitHub's built-in token; no custom secrets are needed. Only the publishing job has repository write permission. The workflow uses the current repository, so forks can release their own builds.
+
+Publishing a release through GitHub's UI or CLI also starts the workflow to attach its packages. Use the tag-push process when immutable releases are enabled: an already published immutable release cannot accept missing assets. Releases created by this workflow already include their packages before publication.
+
+Failed runs can be rerun from GitHub Actions. Retries verify existing assets and upload missing files; conflicting or incomplete assets fail without being overwritten. A moved tag is rejected. Publish a new version for changed files. Releases retain the repository's access settings; users need repository access to download private releases.
 
 The verifier checks packaging and can probe MCP initialization, entrypoints and UI resources without sending a Hermes prompt. Live Hermes integration tests are opt-in. Frontend code lives in `src/web`, the MCP/local HTTP bridge in `src/bridge`, and the Hermes protocol adapter in `src/hermes`.
 

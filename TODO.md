@@ -1,3 +1,10 @@
+# Automatic GitHub releases
+
+- [x] Add a version-tag release workflow that tests, builds and verifies the distributable archives.
+- [x] Implement publishing of the installable ZIP, source ZIP and checksums; reject mismatched versions and unsafe reruns.
+- [x] Document downloads and the release process, and include the workflow in source archives.
+- [ ] Pass local checks and GitHub CI, then verify a real release and its downloaded assets.
+
 # Shareable MIT release
 
 - [x] Audit current files and Git history; identify private setup notes in older commits.

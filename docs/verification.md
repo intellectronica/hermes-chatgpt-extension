@@ -41,3 +41,11 @@ Synthetic managed-supervisor checks covered existing venv/.venv and explicit int
 Standalone browser checks at 1440×900 and 390×844 in light/dark themes verified the viewer-time-zone label and the distinct job schedule zone, with no page overflow or page errors. These fixture renders do not establish a native host embedding or live backend compatibility claim.
 
 CI independently repeats the checks on Node.js 22 and 24 and uploads the two allowlisted archives and SHA256SUMS. See the [workflow results](https://github.com/intellectronica/hermes-chatgpt-extension/actions/workflows/ci.yml) for the exact pushed commit.
+
+## GitHub release automation
+
+The release workflow repeats the full checks on Node.js 22 and 24, then publishes the Node.js 22 packages in a separate job. The release tag must match the package, plugin and lockfile versions. The publishing job checks the remote tag's commit, validates the downloaded CI packages, verifies uploaded bytes through GitHub's asset API, and publishes the draft only after all assets match. Existing release assets are preserved; reruns upload only missing files. An already published immutable release must already contain every asset.
+
+Local type checking, 101 Vitest checks, 44 Node checks, build, plugin verification and fresh-user ZIP verification passed. Both live Hermes suites remained disabled, the production dependency audit found no known vulnerabilities, and actionlint 1.7.12 accepted both workflows. The updated source ZIP includes 84 files; the runtime ZIP still includes 21.
+
+Ten synthetic release checks cover matching metadata, prereleases, draft publication ordering, partial-upload recovery, published-release attachment, immutable reruns, conflicting/incomplete assets, corrupt upload refusal, moved tags and GitHub failures. These tests do not call GitHub. Live workflow and downloaded-release acceptance are recorded after the first automated release completes.
