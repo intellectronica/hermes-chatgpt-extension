@@ -2,7 +2,7 @@
 
 - [x] Compare the supplied Codex/Hermes screenshot with current composer and native styles.
 - [x] Match model-control alignment, placeholder typography and send-button treatment.
-- [ ] Verify light/dark desktop/mobile renders, build/install the update and pass CI.
+- [x] Verify light/dark desktop/mobile renders, build/install 0.2.3 and pass implementation CI (9b8d827, run 36888070063).
 
 # Interface refinements
 

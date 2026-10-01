@@ -22,7 +22,7 @@ The existing 98px desktop height, 22px corners, 28px send circle and 8px trailin
 - The Impeccable detector was run once on the changed UI files. Its sole warning is the pre-existing 3px Markdown blockquote border, an intentional Markdown convention outside this composer change. The native dim placeholder is deliberately matched to the user's reference; the persistent accessible label and focus treatment remain available.
 - Isolated browser acceptance passes in light/dark at 1440×900 and 390×844: empty, typed and multiline drafts, long-model truncation, Power and model-menu bounds, and keyboard focus restoration. The empty desktop composer is 98px high; the retained narrow variant is 100px. Send stays 28px with a 20px arrow and 8px trailing/bottom inset, and the model group sits 8px before it. No horizontal overflow or browser page errors were found.
 - The fixture supplies clearly labelled mock profile/model data and performs no Hermes connections or inference. A temporary host-token probe confirms composer-surface and placeholder-tertiary inheritance at 50% opacity. The full-width dark and narrow dark empty screenshots were visually reviewed after verifying an empty textarea value and disabled Send; a stale draft frame from the browser harness was replaced, with no UI source change.
-- Final CI evidence is recorded after pushing the implementation.
+- Implementation commit `9b8d82755ad44dcce2c4cbfa28ab3b8dce92f436` passes [GitHub CI run 36888070063](https://github.com/intellectronica/hermes-chatgpt-extension/actions/runs/36888070063): clean install, TypeScript, tests, build, plugin verification, production audit and artefact upload.
 
 ## Installed package
 
