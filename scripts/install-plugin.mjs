@@ -96,7 +96,8 @@ export async function planInstallation({ root = packageRoot, home = os.homedir()
     assert.ok(configStat.isFile() && !configStat.isSymbolicLink(), '--config must refer to an existing regular file.');
     mcp.mcpServers.hermes.args = ['${PLUGIN_ROOT}/dist/server.cjs', '--stdio', '--config', config];
   }
-  const files = [...packageFiles, ...await collectFiles(root, 'skills/hermes')];
+  const notices = await statOrMissing(path.join(root, 'THIRD_PARTY_NOTICES.md'));
+  const files = [...packageFiles, ...(notices ? ['THIRD_PARTY_NOTICES.md'] : []), ...await collectFiles(root, 'skills/hermes')];
   const snapshots = [];
   for (const relative of files) {
     const stat = await lstat(path.join(root, relative));

@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RealHermesService } from '../src/hermes/service.js';
 import { HermesRpcClient } from '../src/hermes/rpc.js';
+import { modelId, REASONING_EFFORTS } from '../src/hermes/models.js';
 import type { ChatRef } from '../src/shared/types.js';
 
 interface Stored {
@@ -11,6 +12,9 @@ interface Stored {
   rows: Record<string, unknown>[];
   running: boolean;
   inflight?: Record<string, unknown>;
+  model: string;
+  provider: string;
+  effort: string;
 }
 
 /** A real HTTP/WS peer implementing the pinned Hermes contract subset, without any model calls. */
@@ -28,6 +32,12 @@ class Backend {
   dropPromptAck = false;
   rejectReads = false;
   seq = new Map<string, number>();
+  delayOptions = false;
+  pendingOptions: (() => void)[] = [];
+  failReasoningRead = false;
+  lazySnapshot = false;
+  avatar = { found: true, mime: 'image/png', size: 8, data: 'data:image/png;base64,iVBORw0KGgo=' };
+  extraModels: string[] = [];
 
   constructor() {
     this.server = createServer((request, response) => {
@@ -65,12 +75,38 @@ class Backend {
         const answer = (result: unknown): void => { socket.send(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result })); };
         switch (frame.method) {
           case 'client.capabilities': answer({ server_requests: ['approval', 'clarify', 'secret'], declines_not_shown: true }); break;
-          case 'profiles.list': answer({ profiles: [{ name: 'default', model: 'configured-model', is_default: true }, { name: 'work', model: 'another-model' }] }); break;
+          case 'profiles.list': answer({ profiles: [{ name: 'default', model: 'default-model', provider: 'fixture', is_default: true, has_avatar: false }, { name: 'work', model: 'work-model', provider: 'fixture', has_avatar: true }] }); break;
+          case 'profiles.get_asset': answer(this.avatar); break;
+          case 'model.options': {
+            const reply = (): void => answer({ model: `${profile}-model`, provider: 'fixture', providers: [
+              { slug: 'fixture', name: 'Profile provider', api_url: `https://user:${this.token}@private.test`, models: [`${profile}-model`, 'alternate', 'no-reasoning', 'required-reasoning', 'guarded', 'locked', 'injected --global', ...this.extraModels], unavailable_models: ['locked'], capabilities: { [`${profile}-model`]: { reasoning: true }, alternate: { reasoning: true }, 'no-reasoning': { reasoning: false }, 'required-reasoning': { reasoning: true, can_disable_reasoning: false } } },
+              { slug: 'other', name: 'Other provider', models: ['alternate'], capabilities: { alternate: { reasoning: true } } },
+            ] });
+            if (this.delayOptions) this.pendingOptions.push(reply); else reply();
+            break;
+          }
+          case 'config.get':
+            if (this.failReasoningRead && params.session_id) socket.send(JSON.stringify({ jsonrpc: '2.0', id: frame.id, error: { code: 5001, message: this.token } }));
+            else answer({ value: params.session_id && session ? session.effort : profile === 'default' ? 'high' : 'low' });
+            break;
+          case 'config.set': {
+            if (!session || params.scope !== 'session') throw new Error('Fixture settings require exact session scope.');
+            if (params.key === 'model') {
+              const tokens = String(params.value).split(' ');
+              if (!tokens.includes('--session') || tokens.includes('--global')) throw new Error('A model selection must carry --session and never --global.');
+              if (tokens[0] === 'guarded' && !params.confirm_expensive_model) { answer({ key: 'model', value: 'guarded', scope: 'session', confirm_required: true, confirm_message: 'This model costs more.' }); break; }
+              session.model = tokens[0]!;
+              session.provider = tokens[tokens.indexOf('--provider') + 1]!;
+              if (tokens.includes('--reasoning')) session.effort = tokens[tokens.indexOf('--reasoning') + 1]!;
+              answer({ key: 'model', value: session.model, scope: 'session' });
+            } else { session.effort = String(params.value); answer({ key: 'reasoning', value: session.effort, scope: 'session' }); }
+            break;
+          }
           case 'session.list': answer({ sessions: session ? [{ id: 'same-session', title: `${profile} conversation`, started_at: 1_796_000_000, source: 'codex-extension' }] : [] }); break;
           case 'session.create':
           case 'session.resume': {
-            if (!session) { session = { runtime: `${profile}.runtime`, rows: [], running: false }; this.sessions.set(key, session); }
-            answer({ session_id: session.runtime, stored_session_id: 'same-session', messages: session.rows, running: session.running, inflight: session.inflight, info: { stored_session_id: 'same-session', model: `${profile}-model` }, open_requests: [] });
+            if (!session) { session = { runtime: `${profile}.runtime`, rows: [], running: false, model: `${profile}-model`, provider: 'fixture', effort: profile === 'default' ? 'high' : 'low' }; this.sessions.set(key, session); }
+            answer({ session_id: session.runtime, stored_session_id: 'same-session', messages: session.rows, running: session.running, inflight: session.inflight, info: { stored_session_id: 'same-session', model: this.lazySnapshot ? `${profile}-model` : session.model, ...(!this.lazySnapshot ? { provider: session.provider, reasoning_effort: session.effort } : { lazy: true }) }, open_requests: [] });
             break;
           }
           case 'prompt.submit':
@@ -134,6 +170,115 @@ afterEach(async () => {
 });
 
 describe('Hermes ownership and transport behaviour', () => {
+  it('inherits each profile’s model and effort without session-create overrides', async () => {
+    const { service, backend, ref } = await fixture();
+    expect(await service.getChat(ref)).toMatchObject({ model: 'default-model', provider: 'fixture', modelId: modelId('fixture', 'default-model'), reasoningEffort: 'high' });
+    const work = await service.openChat({ connectionId: 'remote', profile: 'work' });
+    expect(work).toMatchObject({ model: 'work-model', provider: 'fixture', modelId: modelId('fixture', 'work-model'), reasoningEffort: 'low' });
+    expect(backend.calls.filter(call => call.method === 'session.create').every(call => !('model' in call.params) && !('provider' in call.params) && !('reasoning_effort' in call.params))).toBe(true);
+  });
+
+  it('fetches actual profile avatars and returns only safe, available provider/model pairs', async () => {
+    const { service, backend } = await fixture();
+    const profiles = await service.listProfiles('remote');
+    expect(profiles.map(profile => profile.reasoningEffort)).toEqual(['high', 'low']);
+    expect(profiles.every(profile => profile.avatar === backend.avatar.data)).toBe(true);
+    expect(backend.calls.find(call => call.method === 'profiles.get_asset' && call.params.name === 'default')?.params).toEqual({ name: 'default', profile: 'default', asset: 'avatar' });
+    const catalogue = await service.listModels('remote', 'default');
+    expect(catalogue.defaultModelId).toBe(modelId('fixture', 'default-model'));
+    expect(catalogue.models.some(model => model.id === catalogue.defaultModelId)).toBe(true);
+    expect(catalogue.models.filter(model => model.model === 'alternate').map(model => model.id)).toEqual([modelId('fixture', 'alternate'), modelId('other', 'alternate')]);
+    expect(catalogue.models.some(model => model.model === 'locked' || model.model.includes('--global'))).toBe(false);
+    expect(catalogue.reasoningEfforts).toEqual([...REASONING_EFFORTS]);
+    expect(JSON.stringify(catalogue)).not.toContain(backend.token);
+    expect(JSON.stringify(catalogue)).not.toContain('api_url');
+  });
+
+  it('changes model and effort in one acknowledged session-only transaction', async () => {
+    const { service, backend, ref } = await fixture();
+    const work = await service.openChat({ connectionId: 'remote', profile: 'work' });
+    const result = await service.configureChat(ref, { modelId: modelId('other', 'alternate'), reasoningEffort: 'xhigh' });
+    expect(result.chat).toMatchObject({ model: 'alternate', provider: 'other', modelId: modelId('other', 'alternate'), reasoningEffort: 'xhigh' });
+    expect(backend.calls.filter(call => call.method === 'config.set')).toEqual([{ method: 'config.set', params: { profile: 'default', session_id: 'default.runtime', key: 'model', scope: 'session', value: 'alternate --provider other --session --reasoning xhigh', confirm_expensive_model: false } }]);
+    expect(await service.getChat({ connectionId: 'remote', profile: 'work', sessionId: work.id })).toMatchObject({ model: 'work-model', reasoningEffort: 'low' });
+    expect((await service.listModels('remote', 'default')).defaultModelId).toBe(modelId('fixture', 'default-model'));
+    expect(backend.calls.some(call => call.method === 'prompt.submit')).toBe(false);
+  });
+
+  it('rejects unavailable/injected models and unsupported reasoning before any settings write', async () => {
+    const { service, backend, ref } = await fixture();
+    await expect(service.configureChat(ref, { modelId: modelId('fixture', 'locked') })).rejects.toThrow('not available');
+    await expect(service.configureChat(ref, { modelId: modelId('fixture', 'injected --global') })).rejects.toThrow('not available');
+    await expect(service.configureChat(ref, { modelId: modelId('fixture', 'no-reasoning'), reasoningEffort: 'high' })).rejects.toThrow('does not expose');
+    await expect(service.configureChat(ref, { modelId: modelId('fixture', 'required-reasoning'), reasoningEffort: 'none' })).rejects.toThrow('requires reasoning');
+    await expect(service.configureChat(ref, { reasoningEffort: 'show' })).rejects.toThrow('supported reasoning');
+    await expect(service.configureChat(ref, { modelId: modelId('fixture', 'alternate'), confirm: true })).rejects.toThrow('Review');
+    expect(backend.calls.filter(call => call.method === 'config.set')).toEqual([]);
+  });
+
+  it('requires an exact, owner-scoped confirmation for guarded model choices', async () => {
+    const { service, backend, ref } = await fixture();
+    const pending = await service.configureChat(ref, { modelId: modelId('fixture', 'guarded'), reasoningEffort: 'high' });
+    expect(pending.confirmation).toMatchObject({ title: 'Confirm model change', message: 'This model costs more.', modelId: modelId('fixture', 'guarded'), reasoningEffort: 'high' });
+    expect(pending.chat.model).toBe('default-model');
+    expect(backend.sessions.get('default|same-session')!.model).toBe('default-model');
+    await expect(service.configureChat(ref, { modelId: modelId('fixture', 'guarded'), reasoningEffort: 'low', confirm: true })).rejects.toThrow('Review');
+    const work = await service.openChat({ connectionId: 'remote', profile: 'work' });
+    await expect(service.configureChat({ ...ref, profile: 'work', sessionId: work.id }, { modelId: modelId('fixture', 'guarded'), reasoningEffort: 'high', confirm: true })).rejects.toThrow('Review');
+    const confirmed = await service.configureChat(ref, { modelId: modelId('fixture', 'guarded'), reasoningEffort: 'high', confirm: true });
+    expect(confirmed.confirmation).toBeUndefined();
+    expect(confirmed.chat.model).toBe('guarded');
+    expect(backend.calls.filter(call => call.method === 'config.set')).toHaveLength(2);
+    expect(backend.calls.some(call => call.method === 'prompt.submit')).toBe(false);
+  });
+
+  it('locks settings during catalogue loading and refuses a turn arriving from another client', async () => {
+    const { service, backend, ref } = await fixture();
+    backend.delayOptions = true;
+    const changing = service.configureChat(ref, { modelId: modelId('fixture', 'alternate') });
+    const rejected = expect(changing).rejects.toThrow('Wait for the current turn');
+    await vi.waitFor(() => expect(backend.pendingOptions).toHaveLength(1));
+    await expect(service.sendMessage(ref, 'Must not start while settings are loading')).rejects.toThrow('Wait for the current turn');
+    backend.emit('default', 'message.start');
+    await vi.waitFor(async () => expect((await service.getChat(ref)).status).toBe('streaming'));
+    for (const reply of backend.pendingOptions.splice(0)) reply();
+    await rejected;
+    expect(backend.calls.filter(call => call.method === 'config.set' || call.method === 'prompt.submit')).toEqual([]);
+  });
+
+  it('retains accepted pins on lazy client reconnect and clears them after a backend epoch change', async () => {
+    const { service, backend, ref } = await fixture();
+    await service.configureChat(ref, { modelId: modelId('other', 'alternate'), reasoningEffort: 'xhigh' });
+    backend.lazySnapshot = true;
+    for (const socket of backend.sockets) socket.terminate();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    expect(await service.getChat(ref)).toMatchObject({ model: 'alternate', provider: 'other', reasoningEffort: 'xhigh' });
+    backend.epoch = 'epoch-two';
+    const stored = backend.sessions.get('default|same-session')!;
+    stored.model = 'default-model'; stored.provider = 'fixture'; stored.effort = 'high';
+    for (const socket of backend.sockets) socket.terminate();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    expect(await service.getChat(ref)).toMatchObject({ model: 'default-model', provider: 'fixture', reasoningEffort: 'high' });
+    expect(backend.calls.filter(call => call.method === 'config.set')).toHaveLength(1);
+  });
+
+  it('reports missing effort evidence rather than keeping the old value after a combined change', async () => {
+    const { service, backend, ref } = await fixture();
+    backend.failReasoningRead = true;
+    const result = await service.configureChat(ref, { modelId: modelId('fixture', 'alternate'), reasoningEffort: 'xhigh' });
+    expect(result.chat.model).toBe('alternate');
+    expect(result.chat.reasoningEffort).toBeUndefined();
+    expect(result.chat.error).toContain('has not confirmed');
+  });
+
+  it('reports catalogue and avatar limits explicitly', async () => {
+    const { service, backend } = await fixture();
+    backend.extraModels = Array.from({ length: 1_001 }, (_, index) => `extra-${index}`);
+    await expect(service.listModels('remote', 'default')).rejects.toThrow('1,000-model limit');
+    backend.avatar = { found: true, mime: 'image/jpeg', size: 8, data: 'data:image/png;base64,iVBORw0KGgo=' };
+    await expect(service.listProfiles('remote')).rejects.toThrow('could not be safely loaded');
+  });
+
   it('scopes same-ID sessions and late events to their original profile', async () => {
     const { service, backend, ref } = await fixture();
     const work = await service.openChat({ connectionId: 'remote', profile: 'work' });

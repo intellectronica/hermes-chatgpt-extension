@@ -25,9 +25,10 @@ const css = result.outputFiles.find(file => file.path.endsWith('.css'))?.text ??
 if (!js) throw new Error('The UI build did not produce JavaScript.');
 const compiled = await postcss([tailwind({ base: process.cwd(), optimize: true })]).process(css, { from: resolve('src/web/styles.css') });
 const template = await readFile('src/web/index.html', 'utf8');
+const notices = await readFile('THIRD_PARTY_NOTICES.md', 'utf8');
 const html = template
   .replace(/<script[^>]*src=["'][^"']+["'][^>]*><\/script>/g, '')
-  .replace('</head>', () => `<style>${compiled.css.replaceAll('</style', '<\\/style')}</style></head>`)
+  .replace('</head>', () => `<!--\n${notices.replaceAll('--', '—')}\n--><style>${compiled.css.replaceAll('</style', '<\\/style')}</style></head>`)
   .replace('</body>', () => `<script>${js.replaceAll('</script', '<\\/script')}</script></body>`);
 // Replacement strings treat vendor code's $&/$' sequences as template directives.
 // Parse the final HTML and validate its actual script, catching broken inline bundling.

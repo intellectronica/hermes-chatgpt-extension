@@ -1,4 +1,4 @@
-name: First-version checks
+name: Extension checks
 
 on:
   push:
@@ -31,5 +31,6 @@ jobs:
             mcp.json
             skills/
             README.md
+            THIRD_PARTY_NOTICES.md
             examples/
           retention-days: 14

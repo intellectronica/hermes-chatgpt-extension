@@ -1,6 +1,6 @@
 import type {
-  ChatRef, ChatSnapshot, ConnectionSummary, CronJob, CronRun,
-  JsonValue, Profile, SessionSummary,
+  ChatConfiguration, ChatConfigurationResult, ChatRef, ChatSnapshot, ConnectionSummary, CronJob, CronRun,
+  JsonValue, ModelCatalogue, ModelOption, Profile, SessionSummary,
 } from '../shared/types';
 import { ActionError, friendlyError, type HermesApi } from './api';
 
@@ -8,10 +8,34 @@ export const ownerKey = (connectionId: string, profile: string) => JSON.stringif
 export const chatKey = (ref: ChatRef) => JSON.stringify([ref.connectionId, ref.profile, ref.sessionId]);
 export const snapshotRef = (chat: ChatSnapshot): ChatRef => ({ connectionId: chat.connectionId, profile: chat.profile, sessionId: chat.id });
 
+export interface ProfileSection {
+  expanded: boolean;
+  sessions: SessionSummary[];
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+}
+const emptySection = (): ProfileSection => ({ expanded: false, sessions: [], loading: false, loaded: false, error: null });
+
+type DraftChoice = Pick<ChatConfiguration, 'modelId' | 'reasoningEffort'>;
+export interface ModelConfirmation {
+  ref: ChatRef;
+  title: string;
+  message: string;
+  modelId: string;
+  reasoningEffort?: string;
+}
+
 export interface WorkspaceState {
   connections: ConnectionSummary[];
   profiles: Profile[];
   sessions: SessionSummary[];
+  profileSections: Record<string, ProfileSection>;
+  modelCatalogues: Record<string, ModelCatalogue>;
+  modelsLoading: Record<string, boolean>;
+  modelsError: Record<string, string>;
+  draftChoices: Record<string, DraftChoice>;
+  confirmations: Record<string, ModelConfirmation>;
   connectionId: string;
   profile: string;
   sessionId: string | null;
@@ -38,7 +62,8 @@ export interface WorkspaceState {
 }
 
 const initialState = (): WorkspaceState => ({
-  connections: [], profiles: [], sessions: [], connectionId: '', profile: '', sessionId: null,
+  connections: [], profiles: [], sessions: [], profileSections: {}, modelCatalogues: {}, modelsLoading: {},
+  modelsError: {}, draftChoices: {}, confirmations: {}, connectionId: '', profile: '', sessionId: null,
   tab: 'chat', connectionState: 'disconnected', loading: true, profilesLoading: false,
   sessionsLoading: false, chatLoading: false, error: null, chats: {}, drafts: {}, pending: {},
   uncertain: {}, attempted: {}, cron: [], allProfiles: false, cronLoading: false, cronError: null,
@@ -50,12 +75,15 @@ export class WorkspaceStore {
   private state = initialState();
   private readonly listeners = new Set<() => void>();
   private ownerGeneration = 0;
+  private connectionGeneration = 0;
   private sessionGeneration = 0;
   private cronGeneration = 0;
   private jobGeneration = 0;
   private started = false;
   private lastSession: Record<string, string | null> = {};
   private requestSequence: Record<string, number> = {};
+  private sectionSequence: Record<string, number> = {};
+  private catalogueSequence: Record<string, number> = {};
 
   constructor(private readonly api: HermesApi) {}
 
@@ -89,6 +117,24 @@ export class WorkspaceStore {
     this.update({ drafts: { ...this.state.drafts, [this.getDraftKey()]: text } });
   }
 
+  getCatalogue() {
+    return this.state.modelCatalogues[ownerKey(this.state.connectionId, this.state.profile)];
+  }
+
+  getModelSelection(): { catalogue?: ModelCatalogue; model?: ModelOption; label: string; reasoningEffort?: string; profileDefault: boolean } {
+    const catalogue = this.getCatalogue();
+    const profile = this.state.profiles.find((item) => item.name === this.state.profile);
+    // A reconnect must reveal the refreshed session settings, never an old optimistic choice.
+    const chat = this.state.chatLoading ? undefined : this.getChat();
+    const choice = this.state.sessionId ? undefined : this.state.draftChoices[this.getDraftKey()];
+    const id = this.state.sessionId ? chat?.modelId : choice?.modelId ?? catalogue?.defaultModelId;
+    const model = catalogue?.models.find((item) => item.id === id)
+      ?? (chat?.model ? catalogue?.models.find((item) => item.model === chat.model && item.provider === chat.provider) : undefined);
+    return { catalogue, model, label: model?.label ?? (this.state.sessionId ? chat?.model ?? (this.state.chatLoading ? 'Loading model…' : 'Model unavailable') : profile?.model ?? 'Profile model'),
+      reasoningEffort: model?.reasoningSupported === false ? undefined : this.state.sessionId ? chat?.reasoningEffort : choice?.reasoningEffort ?? catalogue?.defaultReasoningEffort ?? profile?.reasoningEffort,
+      profileDefault: this.state.sessionId ? Boolean(chat?.modelId && chat.modelId === catalogue?.defaultModelId && (model?.reasoningSupported === false || (chat.reasoningEffort && chat.reasoningEffort === catalogue?.defaultReasoningEffort))) : !choice };
+  }
+
   setTab(tab: 'chat' | 'cron') {
     this.update({ tab });
     if (tab === 'cron') void this.loadCron();
@@ -107,6 +153,7 @@ export class WorkspaceStore {
   }
 
   async selectConnection(connectionId: string) {
+    const connectionGeneration = ++this.connectionGeneration;
     const generation = ++this.ownerGeneration;
     ++this.sessionGeneration;
     ++this.cronGeneration;
@@ -116,7 +163,7 @@ export class WorkspaceStore {
       cronLoading: false, runsLoading: false, cronError: null, runsError: null, connectionState: 'connecting' });
     try {
       const profiles = await this.api.call<Profile[]>('list_profiles', { connectionId });
-      if (generation !== this.ownerGeneration) return;
+      if (generation !== this.ownerGeneration || connectionGeneration !== this.connectionGeneration) return;
       this.update({ profiles, profilesLoading: false, connectionState: 'connected' });
       const profile = profiles.find((item) => item.isDefault)?.name ?? profiles[0]?.name;
       if (profile) await this.selectProfile(profile);
@@ -125,25 +172,81 @@ export class WorkspaceStore {
     }
   }
 
-  async selectProfile(profile: string) {
+  async selectProfile(profile: string, targetSession?: string) {
+    if (!this.state.profiles.some((item) => item.name === profile)) return;
     const generation = ++this.ownerGeneration;
     ++this.sessionGeneration;
     ++this.cronGeneration;
     ++this.jobGeneration;
     const connectionId = this.state.connectionId;
-    const sessionId = this.lastSession[ownerKey(connectionId, profile)] ?? null;
-    this.update({ profile, sessionId, sessions: [], sessionsLoading: true, error: null,
+    const sectionKey = ownerKey(connectionId, profile);
+    const section = this.state.profileSections[sectionKey];
+    const sessionId = targetSession ?? this.lastSession[sectionKey] ?? null;
+    this.update({ profile, sessionId, sessions: section?.sessions ?? [], sessionsLoading: true, error: null,
+      profileSections: { ...this.state.profileSections, [sectionKey]: { ...(section ?? emptySection()), expanded: true } },
       cron: [], selectedJob: null, runs: [], cronError: null, runsError: null, chatLoading: false,
       cronLoading: false, runsLoading: false });
     if (sessionId) void this.openSession(sessionId, false);
     if (this.state.tab === 'cron') void this.loadCron();
+    await Promise.all([this.loadProfileSessions(connectionId, profile, generation), this.loadModels(connectionId, profile)]);
+  }
+
+  toggleProfile(profile: string) {
+    const key = ownerKey(this.state.connectionId, profile);
+    if (profile !== this.state.profile) { void this.selectProfile(profile); return; }
+    const section = this.state.profileSections[key];
+    const expanded = !section?.expanded;
+    this.update({ profileSections: { ...this.state.profileSections, [key]: { ...(section ?? emptySection()), expanded } } });
+    if (expanded && !section?.loaded && !section?.loading) void this.loadProfileSessions(this.state.connectionId, profile, this.ownerGeneration);
+  }
+
+  async openProfileSession(profile: string, sessionId: string) {
+    if (profile === this.state.profile) return this.openSession(sessionId);
+    this.update({ tab: 'chat' });
+    return this.selectProfile(profile, sessionId);
+  }
+
+  newProfileChat(profile: string) {
+    if (profile !== this.state.profile) void this.selectProfile(profile);
+    if (this.state.profile === profile) this.newChat();
+  }
+
+  async loadProfileSessions(connectionId = this.state.connectionId, profile = this.state.profile, generation = this.ownerGeneration) {
+    const key = ownerKey(connectionId, profile);
+    const connectionGeneration = this.connectionGeneration;
+    const sequence = this.sectionSequence[key] = (this.sectionSequence[key] ?? 0) + 1;
+    const previous = this.state.profileSections[key];
+    this.update({ profileSections: { ...this.state.profileSections, [key]: { ...(previous ?? emptySection()), loading: true, error: null } } });
     try {
       const sessions = await this.api.call<SessionSummary[]>('list_sessions', { connectionId, profile });
-      if (generation !== this.ownerGeneration) return;
+      if (connectionGeneration !== this.connectionGeneration || sequence !== this.sectionSequence[key]) return;
       if (sessions.some((session) => session.profile !== profile)) throw new ActionError('The bridge returned conversations owned by another profile. Reconnect to refresh the list.');
-      this.update({ sessions, sessionsLoading: false });
+      const selected = generation === this.ownerGeneration && connectionId === this.state.connectionId && profile === this.state.profile;
+      this.update({ profileSections: { ...this.state.profileSections, [key]: { ...this.state.profileSections[key], sessions, loading: false, loaded: true, error: null } },
+        ...(selected ? { sessions, sessionsLoading: false } : {}) });
     } catch (error) {
-      if (generation === this.ownerGeneration) this.update({ sessionsLoading: false, error: friendlyError(error) });
+      if (connectionGeneration !== this.connectionGeneration || sequence !== this.sectionSequence[key]) return;
+      const message = friendlyError(error);
+      this.update({ profileSections: { ...this.state.profileSections, [key]: { ...this.state.profileSections[key], loading: false, error: message } },
+        ...(generation === this.ownerGeneration ? { sessionsLoading: false } : {}) });
+    }
+  }
+
+  async loadModels(connectionId = this.state.connectionId, profile = this.state.profile) {
+    if (!connectionId || !profile) return;
+    const key = ownerKey(connectionId, profile);
+    const connectionGeneration = this.connectionGeneration;
+    const sequence = this.catalogueSequence[key] = (this.catalogueSequence[key] ?? 0) + 1;
+    const modelsError = { ...this.state.modelsError }; delete modelsError[key];
+    this.update({ modelsLoading: { ...this.state.modelsLoading, [key]: true }, modelsError });
+    try {
+      const catalogue = await this.api.call<ModelCatalogue>('list_models', { connectionId, profile });
+      if (connectionGeneration !== this.connectionGeneration || sequence !== this.catalogueSequence[key]) return;
+      if (catalogue.connectionId !== connectionId || catalogue.profile !== profile) throw new ActionError('The model list belongs to another profile. Refresh it before choosing a model.');
+      this.update({ modelCatalogues: { ...this.state.modelCatalogues, [key]: catalogue }, modelsLoading: { ...this.state.modelsLoading, [key]: false } });
+    } catch (error) {
+      if (connectionGeneration !== this.connectionGeneration || sequence !== this.catalogueSequence[key]) return;
+      this.update({ modelsError: { ...this.state.modelsError, [key]: friendlyError(error) }, modelsLoading: { ...this.state.modelsLoading, [key]: false } });
     }
   }
 
@@ -151,6 +254,111 @@ export class WorkspaceStore {
     ++this.sessionGeneration;
     this.lastSession[ownerKey(this.state.connectionId, this.state.profile)] = null;
     this.update({ sessionId: null, tab: 'chat', chatLoading: false, error: null });
+  }
+
+  private configurationBlocked(ref = this.getRef()) {
+    const key = ref ? chatKey(ref) : this.getDraftKey();
+    const chat = ref ? this.state.chats[key] : undefined;
+    return this.state.chatLoading || this.state.pending[key] || this.state.uncertain[key] || this.state.confirmations[key]
+      || chat?.status === 'streaming' || chat?.status === 'unknown' || chat?.status === 'connecting' || Boolean(chat?.questions.length);
+  }
+
+  async chooseModel(modelId: string) {
+    const catalogue = this.getCatalogue();
+    const model = catalogue?.models.find((item) => item.id === modelId);
+    if (!model || !catalogue || this.configurationBlocked()) return;
+    let reasoningEffort = this.getModelSelection().reasoningEffort;
+    if (model.reasoningSupported === false) reasoningEffort = undefined;
+    else if (reasoningEffort === 'none' && model.canDisableReasoning === false) {
+      reasoningEffort = catalogue.reasoningEfforts.find((effort) => effort === catalogue.defaultReasoningEffort && effort !== 'none')
+        ?? catalogue.reasoningEfforts.find((effort) => effort !== 'none');
+    }
+    return this.chooseConfiguration({ modelId, ...(reasoningEffort ? { reasoningEffort } : {}) });
+  }
+
+  async chooseReasoning(reasoningEffort: string) {
+    const selection = this.getModelSelection();
+    if (!selection.catalogue?.reasoningEfforts.includes(reasoningEffort) || selection.model?.reasoningSupported === false
+      || (reasoningEffort === 'none' && selection.model?.canDisableReasoning === false) || this.configurationBlocked()) return;
+    const draftChoice = !this.getRef() ? this.state.draftChoices[this.getDraftKey()] : undefined;
+    return this.chooseConfiguration({ ...(draftChoice?.modelId ? { modelId: draftChoice.modelId } : {}), reasoningEffort });
+  }
+
+  async useProfileDefault() {
+    const catalogue = this.getCatalogue();
+    if (!catalogue || this.configurationBlocked()) return;
+    if (!this.getRef()) {
+      const draftChoices = { ...this.state.draftChoices }; delete draftChoices[this.getDraftKey()];
+      this.update({ draftChoices });
+      return;
+    }
+    const model = catalogue.models.find((item) => item.id === catalogue.defaultModelId);
+    return this.chooseConfiguration({ modelId: catalogue.defaultModelId,
+      ...(catalogue.defaultReasoningEffort && model?.reasoningSupported !== false ? { reasoningEffort: catalogue.defaultReasoningEffort } : {}) });
+  }
+
+  private async chooseConfiguration(choice: DraftChoice) {
+    const ref = this.getRef();
+    if (!ref) {
+      this.update({ draftChoices: { ...this.state.draftChoices, [this.getDraftKey()]: choice } });
+      return;
+    }
+    const key = chatKey(ref);
+    const generation = this.sessionGeneration;
+    const ownerGeneration = this.ownerGeneration;
+    this.requestSequence[key] = (this.requestSequence[key] ?? 0) + 1;
+    this.update({ pending: { ...this.state.pending, [key]: true }, error: null });
+    try {
+      await this.applyConfiguration(ref, choice);
+    } catch (error) {
+      if (generation === this.sessionGeneration && ownerGeneration === this.ownerGeneration) this.update({ error: friendlyError(error) });
+    } finally {
+      this.update({ pending: { ...this.state.pending, [key]: false } });
+    }
+  }
+
+  private async applyConfiguration(ref: ChatRef, choice: DraftChoice, confirm = false): Promise<boolean> {
+    const result = await this.api.call<ChatConfigurationResult>('configure_chat', { ...ref, ...choice, ...(confirm ? { confirm: true } : {}) });
+    const key = chatKey(ref);
+    this.cacheChat(result.chat, ref);
+    const confirmations = { ...this.state.confirmations };
+    if (result.confirmation) {
+      // The approved transaction must be exactly the one Hermes describes.
+      if (choice.modelId && result.confirmation.modelId !== choice.modelId) throw new ActionError('Hermes returned a confirmation for a different model. Refresh the conversation before changing it.');
+      if (choice.reasoningEffort && result.confirmation.reasoningEffort !== choice.reasoningEffort) throw new ActionError('Hermes returned a confirmation for different reasoning settings. Refresh the conversation before changing them.');
+      confirmations[key] = { ref, ...result.confirmation };
+    } else {
+      delete confirmations[key];
+    }
+    this.update({ confirmations });
+    return !result.confirmation;
+  }
+
+  async confirmConfiguration() {
+    const ref = this.getRef();
+    if (!ref) return;
+    const key = chatKey(ref);
+    const confirmation = this.state.confirmations[key];
+    if (!confirmation || this.state.pending[key] || this.state.chats[key]?.status === 'streaming' || this.state.uncertain[key]) return;
+    const generation = this.sessionGeneration;
+    const ownerGeneration = this.ownerGeneration;
+    this.requestSequence[key] = (this.requestSequence[key] ?? 0) + 1;
+    this.update({ pending: { ...this.state.pending, [key]: true }, error: null });
+    try {
+      await this.applyConfiguration(ref, { modelId: confirmation.modelId, ...(confirmation.reasoningEffort ? { reasoningEffort: confirmation.reasoningEffort } : {}) }, true);
+    } catch (error) {
+      // Retrying a guarded transaction always requires another explicit click.
+      if (generation === this.sessionGeneration && ownerGeneration === this.ownerGeneration) this.update({ error: friendlyError(error) });
+    } finally {
+      this.update({ pending: { ...this.state.pending, [key]: false } });
+    }
+  }
+
+  cancelConfiguration() {
+    const ref = this.getRef();
+    if (!ref || this.state.pending[chatKey(ref)]) return;
+    const confirmations = { ...this.state.confirmations }; delete confirmations[chatKey(ref)];
+    this.update({ confirmations });
   }
 
   private cacheChat(chat: ChatSnapshot, expected: ChatRef): boolean {
@@ -222,17 +430,18 @@ export class WorkspaceStore {
   async send() {
     const { connectionId, profile, sessionId } = this.state;
     const text = this.state.drafts[this.getDraftKey()]?.trim();
-    const current = this.getChat();
     const originalRef = this.getRef();
-    if (!text || !profile || !connectionId || this.state.chatLoading || current?.status === 'streaming'
-      || current?.status === 'unknown' || (originalRef && (this.state.pending[chatKey(originalRef)] || this.state.uncertain[chatKey(originalRef)]))) return;
+    if (!text || !profile || !connectionId || this.configurationBlocked()) return;
     const generation = this.sessionGeneration;
     const ownerGeneration = this.ownerGeneration;
     const draftKey = this.getDraftKey();
+    const rawDraft = this.state.drafts[draftKey];
+    const choice = !originalRef ? this.state.draftChoices[draftKey] : undefined;
     const provisionalKey = JSON.stringify([connectionId, profile, sessionId]);
     if (this.state.pending[provisionalKey]) return;
     this.update({ pending: { ...this.state.pending, [provisionalKey]: true }, error: null });
     let ref = originalRef;
+    let promptSubmitted = false;
     try {
       if (!ref) {
         const chat = await this.api.call<ChatSnapshot>('open_chat', { connectionId, profile });
@@ -240,22 +449,30 @@ export class WorkspaceStore {
         this.cacheChat(chat, ref);
         this.lastSession[ownerKey(connectionId, profile)] = chat.id;
         if (generation === this.sessionGeneration && ownerGeneration === this.ownerGeneration) this.update({ sessionId: chat.id });
+        // Until an actual send begins, preserve the draft through model confirmation or failure.
+        const draftChoices = { ...this.state.draftChoices }; delete draftChoices[draftKey];
+        this.update({ drafts: { ...this.state.drafts, [draftKey]: this.state.drafts[draftKey] === rawDraft ? '' : this.state.drafts[draftKey], [chatKey(ref)]: rawDraft }, draftChoices });
       }
       const key = chatKey(ref);
       // Invalidate polls that started before this mutation, including delayed idle snapshots.
       this.requestSequence[key] = (this.requestSequence[key] ?? 0) + 1;
-      this.update({ pending: { ...this.state.pending, [key]: true }, drafts: { ...this.state.drafts, [draftKey]: '' }, attempted: { ...this.state.attempted, [key]: text } });
+      this.update({ pending: { ...this.state.pending, [key]: true } });
+      if (choice && !await this.applyConfiguration(ref, choice)) { void this.reloadSessions(connectionId, profile, ownerGeneration); return; }
+      const draftChoices = { ...this.state.draftChoices }; delete draftChoices[draftKey];
+      this.update({ drafts: { ...this.state.drafts, [key]: '' }, draftChoices, attempted: { ...this.state.attempted, [key]: text } });
+      promptSubmitted = true;
       const chat = await this.api.call<ChatSnapshot>('send_message', { ...ref, text });
       this.cacheChat(chat, ref);
       const attempted = { ...this.state.attempted }; delete attempted[key];
       this.update({ attempted });
-      if (ownerGeneration === this.ownerGeneration) void this.reloadSessions(connectionId, profile, ownerGeneration);
+      void this.reloadSessions(connectionId, profile, ownerGeneration);
     } catch (error) {
-      if (ref) {
+      if (ref && promptSubmitted) {
         this.update({ uncertain: { ...this.state.uncertain, [chatKey(ref)]:
           'The send outcome is unknown. Check this conversation before sending another message.' } });
       } else if (generation === this.sessionGeneration && ownerGeneration === this.ownerGeneration) {
-        this.update({ error: friendlyError(error) });
+        const draftChoices = { ...this.state.draftChoices }; delete draftChoices[draftKey];
+        this.update({ error: friendlyError(error), draftChoices });
       }
     } finally {
       const pending = { ...this.state.pending, [provisionalKey]: false };
@@ -265,10 +482,7 @@ export class WorkspaceStore {
   }
 
   private async reloadSessions(connectionId: string, profile: string, generation: number) {
-    try {
-      const sessions = await this.api.call<SessionSummary[]>('list_sessions', { connectionId, profile });
-      if (generation === this.ownerGeneration && sessions.every((session) => session.profile === profile)) this.update({ sessions });
-    } catch { /* The chat result remains usable; the next profile refresh reloads the rail. */ }
+    await this.loadProfileSessions(connectionId, profile, generation);
   }
 
   private async mutateChat(action: 'interrupt_chat' | 'answer_question', args: { questionId?: string; response?: JsonValue } = {}) {

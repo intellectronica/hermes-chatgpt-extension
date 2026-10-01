@@ -1,3 +1,16 @@
+# Native interface and model controls
+
+- [x] Verify current Codex sidebar, composer and model/effort selector styling and behaviour.
+- [x] Verify Hermes profile avatars, configured defaults, available models and per-session reasoning controls.
+- [x] Replace the profile dropdown with expandable sidebar sections containing each profile's chats and avatar.
+- [x] Match the Codex chat layout, typography, controls and light/dark appearance.
+- [x] Add a Codex-style model/effort selector using real profile defaults and available models.
+- [x] Verify session ownership, profile isolation, defaults and model/effort selection against Hermes.
+- [x] Verify every requested interface behaviour in narrow/wide, light/dark browser renders.
+- [x] Update documentation, build/install v0.2.1 and verify the exact native resource and installed assets.
+- [ ] Commit/push the native-interface change and pass GitHub CI.
+- [ ] Verify the refreshed v0.2.1 panel in the actual Codex window (the last inspected widget used an older v0.1 connection; the new app link has been provided).
+
 # First-version checklist
 
 - [x] Initialise local repository and private HTTPS GitHub remote.

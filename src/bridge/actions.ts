@@ -1,17 +1,23 @@
 import { z } from 'zod';
-import type { ActionName, HermesService, JsonValue } from '../shared/types';
+import type { ActionName, ChatConfiguration, HermesService, JsonValue } from '../shared/types';
 
 const connectionId = z.string().min(1).max(80);
 const profile = z.string().min(1).max(120);
 const sessionId = z.string().min(1).max(200);
 const owner = { connectionId, profile, sessionId };
 const selection = { connectionId, profile };
+const modelSelection = {
+  modelId: z.string().min(1).max(600).optional(),
+  reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
+};
 
 export const actionSchemas = {
   list_connections: z.object({}).strict(),
   list_profiles: z.object({ connectionId }).strict(),
   list_sessions: z.object(selection).strict(),
+  list_models: z.object(selection).strict(),
   open_chat: z.object({ ...selection, sessionId: sessionId.optional() }).strict(),
+  configure_chat: z.object({ ...owner, ...modelSelection, confirm: z.boolean().optional() }).strict(),
   get_chat: z.object(owner).strict(),
   send_message: z.object({ ...owner, text: z.string().trim().min(1).max(50_000) }).strict(),
   interrupt_chat: z.object(owner).strict(),
@@ -31,12 +37,20 @@ export async function dispatchAction(service: HermesService, action: string, inp
   if (!result.success) throw new ActionError('invalid_arguments', 'This action needs valid connection, profile and item details.');
   const args = result.data as Record<string, unknown>;
   if (args.profile === 'all' && name !== 'list_cron_jobs') throw new ActionError('invalid_profile', 'Select a specific profile for this action.');
+  if (name === 'configure_chat' && args.modelId === undefined && args.reasoningEffort === undefined) throw new ActionError('invalid_arguments', 'Select a model or reasoning effort for this conversation.');
   const ref = { connectionId: args.connectionId as string, profile: args.profile as string, sessionId: args.sessionId as string };
+  const configuration: ChatConfiguration = {
+    ...(args.modelId !== undefined ? { modelId: args.modelId as string } : {}),
+    ...(args.reasoningEffort !== undefined ? { reasoningEffort: args.reasoningEffort as string } : {}),
+    ...(args.confirm !== undefined ? { confirm: args.confirm as boolean } : {}),
+  };
   switch (name) {
     case 'list_connections': return service.listConnections();
     case 'list_profiles': return service.listProfiles(ref.connectionId);
     case 'list_sessions': return service.listSessions(ref.connectionId, ref.profile);
+    case 'list_models': return service.listModels(ref.connectionId, ref.profile);
     case 'open_chat': return service.openChat({ connectionId: ref.connectionId, profile: ref.profile, ...(args.sessionId ? { sessionId: ref.sessionId } : {}) });
+    case 'configure_chat': return service.configureChat(ref, configuration);
     case 'get_chat': return service.getChat(ref);
     case 'send_message': return service.sendMessage(ref, args.text as string);
     case 'interrupt_chat': return service.interruptChat(ref);

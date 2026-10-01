@@ -13,7 +13,39 @@ export interface Profile {
   name: string;
   label?: string;
   model?: string;
+  provider?: string;
+  reasoningEffort?: string;
+  /** Validated, bounded image data URI, fetched through the server-side Hermes adapter. */
+  avatar?: string;
   isDefault?: boolean;
+}
+
+export interface ModelOption {
+  /** Opaque identifier for the exact provider/model pair. */
+  id: string;
+  model: string;
+  label: string;
+  provider: string;
+  providerLabel?: string;
+  reasoningSupported?: boolean;
+  canDisableReasoning?: boolean;
+}
+
+export interface ModelCatalogue {
+  connectionId: string;
+  profile: string;
+  models: ModelOption[];
+  defaultModelId: string;
+  defaultReasoningEffort?: string;
+  /** Hermes's supported effort dial; provider routing may clamp a level internally. */
+  reasoningEfforts: string[];
+}
+
+export interface ChatConfiguration {
+  modelId?: string;
+  reasoningEffort?: string;
+  /** Only sent after the user confirms Hermes's own guarded model selection. */
+  confirm?: boolean;
 }
 
 export interface ChatRef {
@@ -73,7 +105,20 @@ export interface ChatSnapshot {
   cursor: number;
   epoch?: string;
   model?: string;
+  modelId?: string;
+  provider?: string;
+  reasoningEffort?: string;
   error?: string;
+}
+
+export interface ChatConfigurationResult {
+  chat: ChatSnapshot;
+  confirmation?: {
+    title: string;
+    message: string;
+    modelId: string;
+    reasoningEffort?: string;
+  };
 }
 
 export interface CronJob {
@@ -106,7 +151,9 @@ export interface HermesService {
   listConnections(): Promise<ConnectionSummary[]>;
   listProfiles(connectionId: string): Promise<Profile[]>;
   listSessions(connectionId: string, profile: string): Promise<SessionSummary[]>;
+  listModels(connectionId: string, profile: string): Promise<ModelCatalogue>;
   openChat(args: OpenChatArgs): Promise<ChatSnapshot>;
+  configureChat(ref: ChatRef, configuration: ChatConfiguration): Promise<ChatConfigurationResult>;
   getChat(ref: ChatRef): Promise<ChatSnapshot>;
   sendMessage(ref: ChatRef, text: string): Promise<ChatSnapshot>;
   interruptChat(ref: ChatRef): Promise<ChatSnapshot>;
@@ -118,7 +165,8 @@ export interface HermesService {
 
 export type ActionName =
   | 'list_connections' | 'list_profiles' | 'list_sessions' | 'open_chat' | 'get_chat'
-  | 'send_message' | 'interrupt_chat' | 'answer_question' | 'list_cron_jobs' | 'get_cron_runs';
+  | 'list_models' | 'configure_chat' | 'send_message' | 'interrupt_chat' | 'answer_question'
+  | 'list_cron_jobs' | 'get_cron_runs';
 
 /** All inputs carry explicit ownership. A profile filter of 'all' is read-only. */
 export interface ActionArgs {
@@ -130,6 +178,9 @@ export interface ActionArgs {
   response?: JsonValue;
   jobId?: string;
   limit?: number;
+  modelId?: string;
+  reasoningEffort?: string;
+  confirm?: boolean;
 }
 
 /** Trusted bridge-only config. Keep tokens in environment variables or private files. */

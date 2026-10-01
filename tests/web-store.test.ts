@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ActionArgs, ActionName, ChatSnapshot, CronJob, CronRun, SessionSummary } from '../src/shared/types';
+import type { ActionArgs, ActionName, ChatSnapshot, CronJob, CronRun, ModelCatalogue, SessionSummary } from '../src/shared/types';
 import type { HermesApi } from '../src/web/api';
-import { chatKey, WorkspaceStore } from '../src/web/store';
+import { chatKey, ownerKey, WorkspaceStore } from '../src/web/store';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -12,7 +12,17 @@ function deferred<T>() {
 
 function snapshot(profile = 'A', cursor = 1, text = profile): ChatSnapshot {
   return { connectionId: 'local', profile, id: 'same-id', status: 'idle', cursor, epoch: 'one',
+    model: 'shared-model', provider: `provider-${profile}`, modelId: catalogue(profile).defaultModelId, reasoningEffort: 'medium',
     messages: [{ id: 'm1', role: 'assistant', content: text }], tools: [], questions: [] };
+}
+
+function catalogue(profile = 'A'): ModelCatalogue {
+  const models = [
+    { id: JSON.stringify([`provider-${profile}`, 'shared-model']), model: 'shared-model', label: 'Shared model', provider: `provider-${profile}`, reasoningSupported: true },
+    { id: JSON.stringify([`guarded-${profile}`, 'shared-model']), model: 'shared-model', label: 'Shared model', provider: `guarded-${profile}`, reasoningSupported: true, canDisableReasoning: false },
+    { id: JSON.stringify([`provider-${profile}`, 'simple-model']), model: 'simple-model', label: 'Simple model', provider: `provider-${profile}`, reasoningSupported: false },
+  ];
+  return { connectionId: 'local', profile, models, defaultModelId: models[0].id, defaultReasoningEffort: 'medium', reasoningEfforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] };
 }
 
 class FakeApi implements HermesApi {
@@ -26,6 +36,8 @@ class FakeApi implements HermesApi {
       list_connections: [{ id: 'local', label: 'Local Hermes', kind: 'http', status: 'connected' }],
       list_profiles: [{ name: 'A', isDefault: true }, { name: 'B' }],
       list_sessions: [], list_cron_jobs: [], get_cron_runs: [],
+      list_models: catalogue(args.profile),
+      configure_chat: { chat: { ...snapshot(args.profile, 2), ...(args.modelId ? { modelId: args.modelId } : {}), ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}) } },
       open_chat: snapshot(args.profile), get_chat: snapshot(args.profile), send_message: snapshot(args.profile),
     };
     return defaults[action] as T;
@@ -190,5 +202,125 @@ describe('cron inspection ownership', () => {
     expect(api.calls.filter((call) => call.action === 'get_cron_runs').map((call) => call.args.profile)).toEqual(['A', 'B']);
     expect(api.calls.find((call) => call.action === 'list_cron_jobs')?.args.profile).toBe('all');
     expect(api.calls.every((call) => !String(call.action).includes('trigger'))).toBe(true);
+  });
+});
+
+describe('native profile sections and conversation settings', () => {
+  it('keeps expanded profile histories separate and opens each child with its owner', async () => {
+    const api = new FakeApi();
+    api.overrides.list_sessions = async (args) => [{ id: 'same-id', profile: args.profile!, title: `${args.profile} chat` }];
+    const store = new WorkspaceStore(api);
+    await store.initialise();
+    store.setDraft('A draft');
+    await store.selectProfile('B');
+    store.setDraft('B draft');
+    expect(store.getSnapshot().profileSections[ownerKey('local', 'A')].sessions[0].title).toBe('A chat');
+    expect(store.getSnapshot().profileSections[ownerKey('local', 'B')].sessions[0].title).toBe('B chat');
+    await store.openProfileSession('A', 'same-id');
+    await tick();
+    expect(store.getChat()?.profile).toBe('A');
+    expect(api.calls.filter((call) => call.action === 'open_chat').at(-1)?.args).toEqual({ connectionId: 'local', profile: 'A', sessionId: 'same-id' });
+    store.toggleProfile('A');
+    expect(store.getSnapshot().profileSections[ownerKey('local', 'A')].expanded).toBe(false);
+    expect(store.getSnapshot().profileSections[ownerKey('local', 'B')].expanded).toBe(true);
+    store.newChat();
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('A draft');
+  });
+
+  it('rejects a stale catalogue after A → B → A and preserves opaque provider/model choices per draft', async () => {
+    const api = new FakeApi(); const store = new WorkspaceStore(api);
+    await store.initialise();
+    const reads: ReturnType<typeof deferred<ModelCatalogue>>[] = [];
+    api.overrides.list_models = () => { const read = deferred<ModelCatalogue>(); reads.push(read); return read.promise; };
+    const oldA = store.selectProfile('A'); const oldB = store.selectProfile('B'); const currentA = store.selectProfile('A');
+    const newest = catalogue('A'); newest.models[1].label = 'Current guarded model';
+    reads[2].resolve(newest); await currentA;
+    reads[0].resolve(catalogue('A')); reads[1].resolve(catalogue('B')); await Promise.all([oldA, oldB]);
+    expect(store.getCatalogue()?.models[1].label).toBe('Current guarded model');
+    await store.chooseModel(newest.models[1].id);
+    await store.chooseReasoning('xhigh');
+    api.overrides.list_models = async (args) => catalogue(args.profile);
+    await store.selectProfile('B');
+    expect(store.getModelSelection().model?.id).toBe(catalogue('B').defaultModelId);
+    expect(store.getModelSelection().reasoningEffort).toBe('medium');
+    await store.selectProfile('A');
+    expect(store.getModelSelection().model?.id).toBe(newest.models[1].id);
+    expect(store.getModelSelection().reasoningEffort).toBe('xhigh');
+    expect(api.calls.filter((call) => call.action === 'configure_chat')).toHaveLength(0);
+  });
+
+  it('stops before a prompt for a guarded model, preserves its draft and requires an explicit exact confirmation', async () => {
+    const api = new FakeApi(); const store = new WorkspaceStore(api);
+    await store.initialise();
+    const modelId = catalogue().models[1].id;
+    api.overrides.configure_chat = async (args) => args.confirm ? { chat: { ...snapshot('A', 3), modelId, reasoningEffort: 'high' } } : {
+      chat: snapshot('A', 2), confirmation: { title: 'Expensive model', message: 'Hermes asks you to confirm this selection.', modelId, reasoningEffort: 'high' },
+    };
+    store.setDraft('Keep this draft'); await store.chooseModel(modelId); await store.chooseReasoning('high'); await store.send();
+    expect(api.calls.filter((call) => call.action === 'send_message')).toHaveLength(0);
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('Keep this draft');
+    expect(store.getSnapshot().uncertain).toEqual({});
+    expect(store.getSnapshot().confirmations[store.getDraftKey()].message).toBe('Hermes asks you to confirm this selection.');
+    await store.send();
+    expect(api.calls.filter((call) => call.action === 'configure_chat')).toHaveLength(1);
+    await store.selectProfile('B');
+    await store.confirmConfiguration();
+    expect(api.calls.filter((call) => call.action === 'configure_chat')).toHaveLength(1);
+    await store.selectProfile('A'); await tick();
+    await store.confirmConfiguration();
+    expect(api.calls.filter((call) => call.action === 'configure_chat').at(-1)?.args).toEqual({ connectionId: 'local', profile: 'A', sessionId: 'same-id', modelId, reasoningEffort: 'high', confirm: true });
+    expect(api.calls.filter((call) => call.action === 'send_message')).toHaveLength(0);
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('Keep this draft');
+    await store.send();
+    expect(api.calls.filter((call) => call.action === 'send_message')).toHaveLength(1);
+    store.newChat(); expect(store.getModelSelection().profileDefault).toBe(true);
+  });
+
+  it('cancels without sending and distinguishes configuration failures from an unknown prompt handoff', async () => {
+    const api = new FakeApi(); const store = new WorkspaceStore(api);
+    await store.initialise();
+    const modelId = catalogue().models[1].id;
+    api.overrides.configure_chat = async () => ({ chat: snapshot(), confirmation: { title: 'Confirm model', message: 'Continue?', modelId, reasoningEffort: 'medium' } });
+    store.setDraft('Preserved'); await store.chooseModel(modelId); await store.send();
+    store.cancelConfiguration();
+    expect(store.getSnapshot().confirmations).toEqual({});
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('Preserved');
+    expect(store.getModelSelection().model?.id).toBe(catalogue().defaultModelId);
+    store.newChat(); store.setDraft('Still preserved'); await store.chooseModel(modelId);
+    api.overrides.configure_chat = async () => { throw new Error('Configuration failed'); };
+    await store.send();
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('Still preserved');
+    expect(store.getSnapshot().uncertain).toEqual({});
+    expect(api.calls.filter((call) => call.action === 'send_message')).toHaveLength(0);
+    expect(store.getSnapshot().error).toBeTruthy();
+  });
+
+  it('changes effort without changing a saved model, applies actual defaults and respects capability limits', async () => {
+    const api = new FakeApi(); const store = new WorkspaceStore(api);
+    await store.initialise(); await store.openSession('same-id');
+    await store.chooseReasoning('high');
+    expect(api.calls.filter((call) => call.action === 'configure_chat').at(-1)?.args).toEqual({ connectionId: 'local', profile: 'A', sessionId: 'same-id', reasoningEffort: 'high' });
+    await store.useProfileDefault();
+    expect(api.calls.filter((call) => call.action === 'configure_chat').at(-1)?.args).toEqual({ connectionId: 'local', profile: 'A', sessionId: 'same-id', modelId: catalogue().defaultModelId, reasoningEffort: 'medium' });
+    await store.chooseModel(catalogue().models[2].id);
+    const count = api.calls.filter((call) => call.action === 'configure_chat').length;
+    await store.chooseReasoning('high');
+    expect(api.calls.filter((call) => call.action === 'configure_chat')).toHaveLength(count);
+    const waiting = snapshot('A', 10); waiting.questions = [{ id: 'q', title: 'Wait', kind: 'clarify', prompt: 'Answer me' }];
+    api.overrides.get_chat = async () => waiting; await store.refreshChat();
+    await store.chooseModel(catalogue().models[0].id);
+    expect(api.calls.filter((call) => call.action === 'configure_chat')).toHaveLength(count);
+  });
+
+  it('uses refreshed authoritative settings after restart and never fills unknown effort from the profile default', async () => {
+    const api = new FakeApi(); const store = new WorkspaceStore(api);
+    await store.initialise(); await store.openSession('same-id');
+    await store.chooseReasoning('ultra');
+    const restarted = { ...snapshot('A', 1), epoch: 'restarted', reasoningEffort: undefined, model: undefined, modelId: undefined, provider: undefined, error: 'Model settings could not be read back.' };
+    api.overrides.get_chat = async () => restarted; await store.refreshChat();
+    expect(store.getModelSelection().reasoningEffort).toBeUndefined();
+    expect(store.getModelSelection().model).toBeUndefined();
+    expect(store.getModelSelection().label).toBe('Model unavailable');
+    expect(store.getChat()?.error).toBe('Model settings could not be read back.');
   });
 });

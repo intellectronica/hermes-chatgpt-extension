@@ -1,5 +1,5 @@
 **Hermes in Codex: extension proposal**  
-Research date: 30 September 2026. Status: researched and proposed; no extension has been implemented or installed.
+Research date: 30 September 2026. This is the original proposal. The private extension is now implemented and installed; [README](../README.md) describes its current scope and [verification](verification.md) records the evidence and limits.
 
 Build a private MCP plugin that opens a Hermes application inside Codex. Use a custom React chat view styled with OpenAI’s UI components, and connect it through a small bridge to Hermes’s existing desktop backend. Start with chat, profile selection and cron inspection. Add cron management and wider ChatGPT distribution after the basic experience works.
 

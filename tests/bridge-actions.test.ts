@@ -21,6 +21,33 @@ describe('explicit action ownership', () => {
     await dispatchAction(service, 'list_cron_jobs', { connectionId: 'remote', profile: 'all' });
     expect(service.listCron).toHaveBeenCalledWith('remote', 'all');
   });
+  it('scopes model reads and configuration to the explicit profile and stored conversation', async () => {
+    const service = fakeService();
+    await dispatchAction(service, 'list_models', { connectionId: 'remote', profile: 'research' });
+    expect(service.listModels).toHaveBeenCalledWith('remote', 'research');
+    const modelId = JSON.stringify(['provider', 'model-default']);
+    await dispatchAction(service, 'configure_chat', { connectionId: 'remote', profile: 'research', sessionId: 'stored-1', modelId, reasoningEffort: 'high', confirm: true });
+    expect(service.configureChat).toHaveBeenCalledWith({ connectionId: 'remote', profile: 'research', sessionId: 'stored-1' }, { modelId, reasoningEffort: 'high', confirm: true });
+  });
+  it('rejects model changes without a complete owner or selection, unsupported levels and provider secrets', async () => {
+    const service = fakeService();
+    const owner = { connectionId: 'remote', profile: 'research', sessionId: 'stored-1' };
+    for (const args of [
+      { ...owner, profile: 'all', modelId: 'model' },
+      { connectionId: 'remote', profile: 'research', modelId: 'model' },
+      { ...owner, confirm: true },
+      { ...owner, reasoningEffort: 'unbounded' },
+      { ...owner, modelId: 'model', apiKey: 'secret' },
+      { ...owner, modelId: 'model', scope: 'profile' },
+    ]) await expect(dispatchAction(service, 'configure_chat', args)).rejects.toMatchObject({ code: expect.stringMatching(/invalid_(arguments|profile)/) });
+    expect(service.configureChat).not.toHaveBeenCalled();
+  });
+  it('inherits new-chat defaults and requires an explicit action to change saved-chat settings', async () => {
+    const service = fakeService();
+    await dispatchAction(service, 'open_chat', { connectionId: 'remote', profile: 'research' });
+    expect(service.openChat).toHaveBeenCalledWith({ connectionId: 'remote', profile: 'research' });
+    await expect(dispatchAction(service, 'open_chat', { connectionId: 'remote', profile: 'research', sessionId: 'stored-1', modelId: 'model' })).rejects.toMatchObject({ code: 'invalid_arguments' });
+  });
   it('bounds errors and removes credentials', () => {
     const result = publicError(new Error('Failed Authorization=abc password=xyz Bearer topsecret at https://alice:secret@example.org/'));
     expect(result.message).not.toMatch(/abc|xyz|topsecret|alice:secret/);

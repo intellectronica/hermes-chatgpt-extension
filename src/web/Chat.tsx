@@ -4,6 +4,8 @@ import { Markdown } from '@openai/apps-sdk-ui/components/Markdown';
 import type { ChatMessage, ChatSnapshot, JsonValue, Question, ToolActivity } from '../shared/types';
 import { Icon } from './icons';
 import { safeMarkdownUrl, statusLabel } from './format';
+import { ModelPicker, type ModelPickerProps } from './ModelPicker';
+import { ProfileAvatar } from './ProfileAvatar';
 
 function Message({ message }: { message: ChatMessage }) {
   const [copied, setCopied] = useState(false);
@@ -28,7 +30,7 @@ function Message({ message }: { message: ChatMessage }) {
     </details>;
   }
   return <article className="message assistant" aria-label={message.role === 'system' ? 'Session information' : 'Hermes message'}>
-    <div className="message-heading"><Icon name="hermes" />{message.role === 'system' ? 'Session information' : 'Hermes'}</div>
+    {message.role === 'system' && <div className="message-heading">Session information</div>}
     <Markdown className="message-body" skipHtml urlTransform={safeMarkdownUrl} copyableCodeBlocks>
       {message.content}
     </Markdown>
@@ -78,8 +80,8 @@ export function QuestionCard({ question, disabled, onAnswer }: {
   </section>;
 }
 
-export function Chat({ chat, loading, pending, ready, profile, onAnswer }: {
-  chat?: ChatSnapshot; loading: boolean; pending: boolean; ready: boolean; profile: string;
+export function Chat({ chat, loading, pending, ready, profile, avatar, onAnswer }: {
+  chat?: ChatSnapshot; loading: boolean; pending: boolean; ready: boolean; profile: string; avatar?: string;
   onAnswer: (questionId: string, response: JsonValue) => Promise<void>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -105,16 +107,16 @@ export function Chat({ chat, loading, pending, ready, profile, onAnswer }: {
       {chat.questions.map((question) => <QuestionCard key={question.id} question={question} disabled={pending} onAnswer={onAnswer} />)}
       {chat.status === 'streaming' && <div className="connection-state" role="status"><span className="stream-placeholder" />{chat.questions.length ? 'Waiting for your answer' : 'Working…'}</div>}
     </section> : <section className="welcome">
-      <div className="welcome-mark"><Icon name="hermes" /></div>
-      <h1>{ready ? 'What can Hermes help with?' : 'Connect to Hermes'}</h1>
+      <div className="welcome-mark"><ProfileAvatar avatar={avatar} label={profile || 'Hermes'} size={40} /></div>
+      <h1>{ready ? 'What would you like to do?' : 'Connect to Hermes'}</h1>
       <p>{ready ? `Start a conversation with the ${profile} profile.` : 'Choose a connection and profile to start chatting.'}</p>
     </section>}
   </div>;
 }
 
-export function Composer({ draft, onDraft, onSend, onStop, disabled, busy, pending, model }: {
+export function Composer({ draft, onDraft, onSend, onStop, disabled, busy, pending, confirmationPending = false, picker }: {
   draft: string; onDraft: (value: string) => void; onSend: () => void; onStop: () => void;
-  disabled: boolean; busy: boolean; pending: boolean; model?: string;
+  disabled: boolean; busy: boolean; pending: boolean; confirmationPending?: boolean; picker?: ModelPickerProps;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -124,22 +126,21 @@ export function Composer({ draft, onDraft, onSend, onStop, disabled, busy, pendi
     textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
   }, [draft]);
   return <footer className="composer-wrap">
-    <form className="composer" onSubmit={(event) => { event.preventDefault(); if (!disabled && !busy && !pending && draft.trim()) onSend(); }}>
+    <form className="composer" onSubmit={(event) => { event.preventDefault(); if (!disabled && !busy && !pending && !confirmationPending && draft.trim()) onSend(); }}>
       <label className="sr-only" htmlFor="hermes-composer">Message Hermes</label>
       <textarea id="hermes-composer" ref={input} rows={1} placeholder="Message Hermes" value={draft}
         disabled={disabled} onChange={(event) => onDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
-            if (!disabled && !busy && !pending && draft.trim()) onSend();
+            if (!disabled && !busy && !pending && !confirmationPending && draft.trim()) onSend();
           }
         }} />
       <div className="composer-footer">
-        <span className="composer-hint">{pending ? 'Sending…' : busy ? 'Hermes is working' : 'Enter to send · Shift+Enter for a new line'}</span>
+        <div className="composer-controls">{picker && <ModelPicker {...picker} />}<span className="composer-hint sr-only" role="status">{pending ? 'Waiting for Hermes…' : busy ? 'Hermes is working' : 'Enter to send. Shift+Enter for a new line.'}</span></div>
         {busy ? <button type="button" className="submit-button" onClick={onStop} disabled={pending} aria-label="Stop response" title="Stop response"><Icon name="stop" /></button>
-          : <button type="submit" className="submit-button" disabled={disabled || pending || !draft.trim()} aria-label="Send message" title="Send message"><Icon name="send" /></button>}
+          : <button type="submit" className="submit-button" disabled={disabled || pending || confirmationPending || !draft.trim()} aria-label="Send message" title="Send message"><Icon name="send" /></button>}
       </div>
     </form>
-    <p className="composer-caption">{model ? `${model} · ` : ''}Hermes can make mistakes. Review its work.</p>
   </footer>;
 }

@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import type { ChatMessage, ChatRef, ChatSnapshot, ConnectionConfig, ConnectionSummary, CronJob, CronRun, HermesConfig, HermesService, JsonValue, OpenChatArgs, Profile, Question, SessionSummary, ToolActivity } from '../shared/types.js';
+import type { ChatConfiguration, ChatConfigurationResult, ChatMessage, ChatRef, ChatSnapshot, ConnectionConfig, ConnectionSummary, CronJob, CronRun, HermesConfig, HermesService, JsonValue, ModelCatalogue, ModelOption, OpenChatArgs, Profile, Question, SessionSummary, ToolActivity } from '../shared/types.js';
 import { HermesConnection } from './connection.js';
 import { HermesRpcClient, HermesRpcError, HermesTransportError, object, type RpcFrame } from './rpc.js';
+import { avatarData, isModelToken, isReasoningEffort, modelId, REASONING_EFFORTS } from './models.js';
 
 const MAX_MESSAGES = 250;
 const MAX_TOOLS = 100;
 const MAX_TEXT = 24_000;
 const MAX_TOOL_TEXT = 6_000;
 const MAX_CHATS = 100;
+const MAX_MODELS = 1_000;
+const METADATA_TTL = 60_000;
 
 function text(value: unknown, limit = MAX_TEXT): string {
   if (typeof value === 'string') return value.length > limit ? `${value.slice(0, limit)}\n[truncated]` : value;
@@ -69,6 +72,10 @@ interface ChatRecord {
   assistantId?: string;
   lastUsed: number;
   lastSynced: number;
+  configuring: boolean;
+  /** Accepted session-only settings while a lazy snapshot cannot describe them. */
+  acknowledgedModel?: { model: string; provider: string };
+  confirmation?: { modelId: string; reasoningEffort?: string };
 }
 
 interface ConnectionRecord {
@@ -76,6 +83,8 @@ interface ConnectionRecord {
   rpc: HermesRpcClient;
   chats: Map<string, ChatRecord>;
   epoch?: string;
+  catalogues: Map<string, { value: ModelCatalogue; fetched: number; generation: number }>;
+  avatars: Map<string, { data?: string; fetched: number; generation: number }>;
 }
 
 export class RealHermesService implements HermesService {
@@ -87,7 +96,7 @@ export class RealHermesService implements HermesService {
     for (const config of configs) {
       if (!config.id || this.connections.has(config.id)) throw new Error('Hermes connection IDs must be unique.');
       const connection = new HermesConnection(config);
-      const record = { connection, chats: new Map<string, ChatRecord>() } as ConnectionRecord;
+      const record = { connection, chats: new Map<string, ChatRecord>(), catalogues: new Map(), avatars: new Map() } as ConnectionRecord;
       record.rpc = new HermesRpcClient(() => connection.wsUrl(), {
         onEvent: event => this.handleEvent(record, event),
         onRequest: frame => this.handleRequest(record, frame),
@@ -128,10 +137,85 @@ export class RealHermesService implements HermesService {
   async listProfiles(connectionId: string): Promise<Profile[]> {
     const record = await this.connected(connectionId);
     const result = object(await record.rpc.request('profiles.list', { profile: 'default', include_sessions: false }, 60_000));
-    return rows(result.profiles).slice(0, 100).map(row => ({
-      name: text(row.name, 128), label: safeText(row.display_name ?? row.name, record.connection, 200),
-      ...(row.model ? { model: safeText(row.model, record.connection, 200) } : {}), isDefault: row.is_default === true,
-    })).filter(row => row.name);
+    if (Array.isArray(result.profiles) && result.profiles.length > 100) throw new Error('This Hermes view supports up to 100 profiles.');
+    const profiles = rows(result.profiles).filter(row => typeof row.name === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(row.name));
+    if (profiles.filter(row => row.has_avatar === true || row.name === 'default').length > 16) throw new Error('This Hermes view supports up to 16 profile avatars.');
+    const values = await Promise.all(profiles.map(async (row): Promise<Profile> => {
+      const name = String(row.name);
+      const [reasoning, avatar] = await Promise.allSettled([
+        record.rpc.request('config.get', { profile: name, key: 'reasoning' }, 30_000),
+        row.has_avatar === true || name === 'default' ? this.profileAvatar(record, name) : Promise.resolve(undefined),
+      ]);
+      if (avatar.status === 'rejected') throw new Error('A Hermes profile avatar could not be safely loaded. Check its format, size and connection.');
+      return {
+        name, label: safeText(row.display_name || name, record.connection, 200),
+        ...(row.model ? { model: safeText(row.model, record.connection, 200) } : {}),
+        ...(row.provider ? { provider: safeText(row.provider, record.connection, 200) } : {}),
+        ...(reasoning.status === 'fulfilled' && typeof object(reasoning.value).value === 'string' ? { reasoningEffort: safeText(object(reasoning.value).value, record.connection, 100) } : {}),
+        ...(avatar.status === 'fulfilled' && avatar.value ? { avatar: avatar.value } : {}), isDefault: row.is_default === true,
+      };
+    }));
+    let avatarBytes = 0;
+    for (const profile of values) {
+      avatarBytes += profile.avatar?.length ?? 0;
+    }
+    if (avatarBytes > 8_000_000) throw new Error('The profile avatars exceed this view’s 8 MB display limit.');
+    return values;
+  }
+
+  private async profileAvatar(record: ConnectionRecord, profile: string): Promise<string | undefined> {
+    const cached = record.avatars.get(profile);
+    if (cached && cached.generation === record.rpc.generation && Date.now() - cached.fetched < METADATA_TTL) return cached.data;
+    const result = await record.rpc.request('profiles.get_asset', { profile, name: profile, asset: 'avatar' }, 30_000);
+    const data = avatarData(result);
+    if (object(result).found === true && !data) throw new Error('Hermes returned an unsupported or oversized profile avatar.');
+    if (record.avatars.size >= 16 && !record.avatars.has(profile)) record.avatars.delete(record.avatars.keys().next().value!);
+    record.avatars.set(profile, { data, fetched: Date.now(), generation: record.rpc.generation });
+    return data;
+  }
+
+  async listModels(connectionId: string, profile: string): Promise<ModelCatalogue> {
+    validProfile(profile);
+    const record = await this.connected(connectionId);
+    const cached = record.catalogues.get(profile);
+    if (cached && cached.generation === record.rpc.generation && Date.now() - cached.fetched < METADATA_TTL) return this.catalogueSnapshot(cached.value);
+    const [options, reasoning] = await Promise.all([
+      record.rpc.request('model.options', { profile, explicit_only: true, include_unconfigured: false }, 60_000),
+      record.rpc.request('config.get', { profile, key: 'reasoning' }, 30_000),
+    ]);
+    const raw = object(options);
+    const models: ModelOption[] = [];
+    const seen = new Set<string>();
+    if (Array.isArray(raw.providers) && raw.providers.length > 100) throw new Error('The Hermes model catalogue exceeds this view’s provider limit.');
+    for (const provider of rows(raw.providers)) {
+      if (!isModelToken(provider.slug)) continue;
+      const unavailable = new Set(Array.isArray(provider.unavailable_models) ? provider.unavailable_models : []);
+      for (const model of Array.isArray(provider.models) ? provider.models : []) {
+        if (!isModelToken(model) || unavailable.has(model)) continue;
+        const id = modelId(provider.slug, model);
+        if (seen.has(id)) continue;
+        if (models.length >= MAX_MODELS) throw new Error('The Hermes model catalogue exceeds this view’s 1,000-model limit.');
+        const capabilities = object(object(provider.capabilities)[model]);
+        models.push({ id, model, label: safeText(model, record.connection, 512), provider: provider.slug,
+          providerLabel: safeText(provider.name || provider.slug, record.connection, 200),
+          ...(typeof capabilities.reasoning === 'boolean' ? { reasoningSupported: capabilities.reasoning } : {}),
+          ...(typeof capabilities.can_disable_reasoning === 'boolean' ? { canDisableReasoning: capabilities.can_disable_reasoning } : {}),
+        });
+        seen.add(id);
+      }
+    }
+    const value: ModelCatalogue = { connectionId, profile, models,
+      defaultModelId: isModelToken(raw.provider) && isModelToken(raw.model) ? modelId(raw.provider, raw.model) : '',
+      defaultReasoningEffort: safeText(object(reasoning).value, record.connection, 100) || undefined,
+      reasoningEfforts: [...REASONING_EFFORTS],
+    };
+    record.catalogues.set(profile, { value, fetched: Date.now(), generation: record.rpc.generation });
+    if (record.catalogues.size > 100) record.catalogues.delete(record.catalogues.keys().next().value!);
+    return this.catalogueSnapshot(value);
+  }
+
+  private catalogueSnapshot(value: ModelCatalogue): ModelCatalogue {
+    return { ...value, models: value.models.map(model => ({ ...model })), reasoningEfforts: [...value.reasoningEfforts] };
   }
 
   async listSessions(connectionId: string, profile: string): Promise<SessionSummary[]> {
@@ -161,12 +245,13 @@ export class RealHermesService implements HermesService {
     const chat = this.newRecord(ref, runtimeId);
     this.applySession(record, chat, result);
     this.keepChat(record, chat);
+    await this.hydrateSelection(record, chat);
     return this.snapshot(chat);
   }
 
   private newRecord(ref: ChatRef, runtimeId?: string): ChatRecord {
     return {
-      ref: { ...ref }, generation: 0, lastSeq: 0, pending: new Map(), sending: false, lastUsed: Date.now(), lastSynced: 0,
+      ref: { ...ref }, generation: 0, lastSeq: 0, pending: new Map(), sending: false, configuring: false, lastUsed: Date.now(), lastSynced: 0,
       snapshot: { connectionId: ref.connectionId, profile: ref.profile, id: ref.sessionId, runtimeId, status: 'connecting', messages: [], tools: [], questions: [], cursor: 0 },
     };
   }
@@ -192,6 +277,7 @@ export class RealHermesService implements HermesService {
       if (!chat.attaching) chat.attaching = this.attach(record, chat).finally(() => { chat!.attaching = undefined; });
       await chat.attaching;
     }
+    if (!chat.snapshot.provider || !chat.snapshot.reasoningEffort) await this.hydrateSelection(record, chat);
     return { record, chat };
   }
 
@@ -205,6 +291,7 @@ export class RealHermesService implements HermesService {
       profile: chat.ref.profile, session_id: chat.ref.sessionId, source: 'codex-extension', lazy: true, inline_images: false, close_on_disconnect: false,
     }, 60_000));
     this.applySession(record, chat, result);
+    await this.hydrateSelection(record, chat);
     if (priorRuntime && priorRuntime === chat.snapshot.runtimeId && priorEpoch && priorEpoch === record.rpc.epoch && priorSeq > 0) {
       try {
         const replay = object(await record.rpc.request('session.events.since', { profile: chat.ref.profile, session_id: priorRuntime, last_seen: priorSeq }, 15_000));
@@ -223,7 +310,7 @@ export class RealHermesService implements HermesService {
     chat.snapshot.runtimeId = text(result.session_id, 256) || chat.snapshot.runtimeId;
     if (!chat.snapshot.runtimeId) throw new Error('The Hermes backend did not return a supported runtime session.');
     chat.snapshot.messages = rows(result.messages).filter(row => row.display_kind !== 'hidden').slice(-MAX_MESSAGES).map((row, index) => this.message(record.connection, row, index));
-    chat.snapshot.model = safeText(info.model, record.connection, 200) || undefined;
+    this.applyInfo(record, chat, info);
     const inflight = object(result.inflight);
     const running = result.running === true || info.running === true || inflight.streaming === true || ['starting', 'waiting', 'working', 'streaming', 'resuming'].includes(text(result.status));
     chat.snapshot.status = running ? 'streaming' : inflight.error ? 'interrupted' : 'idle';
@@ -255,6 +342,93 @@ export class RealHermesService implements HermesService {
     this.recoverRequests(record, rows(result.open_requests));
   }
 
+  private applyInfo(record: ConnectionRecord, chat: ChatRecord, info: Record<string, unknown>): void {
+    // A lazy fallback lacks the session pin/provider. An accepted config.set is stronger evidence.
+    if (info.lazy !== true || !chat.acknowledgedModel) {
+      if (typeof info.model === 'string' && info.model) chat.snapshot.model = safeText(info.model, record.connection, 512);
+      if (typeof info.provider === 'string' && info.provider) chat.snapshot.provider = safeText(info.provider, record.connection, 512);
+    }
+    if (typeof info.reasoning_effort === 'string' && info.reasoning_effort) chat.snapshot.reasoningEffort = safeText(info.reasoning_effort, record.connection, 100);
+    chat.snapshot.modelId = isModelToken(chat.snapshot.model) && isModelToken(chat.snapshot.provider) ? modelId(chat.snapshot.provider, chat.snapshot.model) : undefined;
+  }
+
+  private async hydrateSelection(record: ConnectionRecord, chat: ChatRecord): Promise<boolean> {
+    if (!chat.snapshot.provider) {
+      try {
+        const catalogue = await this.listModels(chat.ref.connectionId, chat.ref.profile);
+        const matching = catalogue.models.filter(model => model.model === chat.snapshot.model);
+        const selected = matching.find(model => model.id === catalogue.defaultModelId) || (matching.length === 1 ? matching[0] : undefined);
+        if (selected) { chat.snapshot.provider = selected.provider; chat.snapshot.modelId = selected.id; }
+      } catch { /* Chat/history still work when provider discovery is unavailable. */ }
+    }
+    try {
+      const result = object(await record.rpc.request('config.get', { profile: chat.ref.profile, session_id: chat.snapshot.runtimeId, key: 'reasoning' }, 30_000));
+      if (typeof result.value === 'string' && result.value) { chat.snapshot.reasoningEffort = safeText(result.value, record.connection, 100); return true; }
+    } catch { /* Missing reasoning evidence remains unset. */ }
+    return false;
+  }
+
+  private turnBlocksSettings(chat: ChatRecord): boolean {
+    return chat.sending || chat.snapshot.status === 'streaming' || chat.snapshot.status === 'unknown' || chat.pending.size > 0;
+  }
+
+  async configureChat(ref: ChatRef, configuration: ChatConfiguration): Promise<ChatConfigurationResult> {
+    if (configuration.reasoningEffort !== undefined && !isReasoningEffort(configuration.reasoningEffort)) throw new Error('Select one of Hermes’s supported reasoning levels.');
+    if (configuration.modelId === undefined && configuration.reasoningEffort === undefined) throw new Error('Choose a model or reasoning level.');
+    const { record, chat } = await this.chat(ref);
+    if (chat.sending || chat.configuring || chat.snapshot.status === 'streaming' || chat.pending.size) throw new Error('Wait for the current turn or question before changing its model.');
+    if (chat.snapshot.status === 'unknown') throw new Error('Reconnect and inspect the conversation before changing its model.');
+    chat.configuring = true;
+    try {
+      const catalogue = await this.listModels(ref.connectionId, ref.profile);
+      // A turn started by another attached client can arrive while the catalogue is loading.
+      if (this.turnBlocksSettings(chat)) throw new Error('Wait for the current turn or question before changing its model.');
+      const selected = catalogue.models.find(model => model.id === (configuration.modelId ?? chat.snapshot.modelId));
+      if (configuration.modelId !== undefined && !selected) throw new Error('That model is not available in the selected Hermes profile.');
+      if (configuration.reasoningEffort !== undefined && selected?.reasoningSupported === false) throw new Error('That model does not expose a reasoning control in Hermes.');
+      if (configuration.reasoningEffort === 'none' && selected?.canDisableReasoning === false) throw new Error('That model requires reasoning to stay enabled.');
+      if (configuration.confirm && (!chat.confirmation || chat.confirmation.modelId !== configuration.modelId || chat.confirmation.reasoningEffort !== configuration.reasoningEffort)) throw new Error('Review this model selection before confirming it.');
+      if (configuration.modelId !== undefined && selected) {
+        const result = object(await record.rpc.request('config.set', {
+          profile: ref.profile, session_id: chat.snapshot.runtimeId, key: 'model', scope: 'session',
+          value: `${selected.model} --provider ${selected.provider} --session${configuration.reasoningEffort ? ` --reasoning ${configuration.reasoningEffort}` : ''}`,
+          confirm_expensive_model: configuration.confirm === true,
+        }, 60_000));
+        if (result.confirm_required === true) {
+          chat.confirmation = { modelId: selected.id, ...(configuration.reasoningEffort ? { reasoningEffort: configuration.reasoningEffort } : {}) };
+          return { chat: this.snapshot(chat), confirmation: { title: 'Confirm model change', message: safeText(result.confirm_message || result.warning || 'Hermes needs confirmation for this model selection.', record.connection, 4_000), ...chat.confirmation } };
+        }
+        if (result.scope && result.scope !== 'session') throw new Error('Hermes did not acknowledge a conversation-only model change.');
+        if (!isModelToken(result.value)) throw new Error('Hermes returned an unsupported model acknowledgement.');
+        chat.acknowledgedModel = { model: result.value, provider: selected.provider };
+        chat.snapshot.model = result.value;
+        chat.snapshot.provider = selected.provider;
+        chat.snapshot.modelId = modelId(selected.provider, result.value);
+      } else {
+        const result = object(await record.rpc.request('config.set', { profile: ref.profile, session_id: chat.snapshot.runtimeId, key: 'reasoning', scope: 'session', value: configuration.reasoningEffort }, 30_000));
+        if (result.scope && result.scope !== 'session') throw new Error('Hermes did not acknowledge a conversation-only reasoning change.');
+        if (!isReasoningEffort(result.value)) throw new Error('Hermes returned an unsupported reasoning acknowledgement.');
+        chat.snapshot.reasoningEffort = result.value;
+      }
+      chat.confirmation = undefined;
+      if (configuration.modelId && configuration.reasoningEffort) chat.snapshot.reasoningEffort = undefined;
+      const hasEffortEvidence = await this.hydrateSelection(record, chat);
+      if (configuration.modelId && configuration.reasoningEffort && (!hasEffortEvidence || chat.snapshot.reasoningEffort !== configuration.reasoningEffort)) {
+        chat.snapshot.reasoningEffort = undefined;
+        chat.snapshot.error = 'The model change was accepted, but Hermes has not confirmed the requested reasoning level. Inspect the selection before sending.';
+      }
+      chat.snapshot.cursor += 1;
+      return { chat: this.snapshot(chat) };
+    } catch (error) {
+      if (error instanceof HermesTransportError && error.ambiguous) {
+        chat.snapshot.status = 'unknown';
+        chat.snapshot.error = 'The model change outcome is unknown. Reconnect to inspect this conversation; the change will not be repeated automatically.';
+        chat.snapshot.cursor += 1;
+      }
+      throw error;
+    } finally { chat.configuring = false; }
+  }
+
   private message(connection: HermesConnection, row: Record<string, unknown>, index: number): ChatMessage {
     const role = ['user', 'assistant', 'tool', 'system'].includes(text(row.role)) ? text(row.role) as ChatMessage['role'] : 'system';
     return {
@@ -272,7 +446,7 @@ export class RealHermesService implements HermesService {
   async sendMessage(ref: ChatRef, input: string): Promise<ChatSnapshot> {
     if (!input.trim() || input.length > 64_000) throw new Error('Enter a message of up to 64,000 characters.');
     const { record, chat } = await this.chat(ref);
-    if (chat.sending || chat.snapshot.status === 'streaming' || chat.pending.size) throw new Error('Wait for the current turn or question before sending another message.');
+    if (chat.sending || chat.configuring || chat.snapshot.status === 'streaming' || chat.pending.size) throw new Error('Wait for the current turn or question before sending another message.');
     if (chat.snapshot.status === 'unknown') throw new Error('Reconnect and inspect stored history before sending another message.');
     chat.sending = true;
     chat.assistantId = undefined;
@@ -368,6 +542,7 @@ export class RealHermesService implements HermesService {
       if (epoch && record.epoch && record.epoch !== epoch) {
         for (const chat of record.chats.values()) {
           chat.generation = 0; chat.lastSeq = 0; chat.pending.clear(); chat.snapshot.questions = [];
+          chat.acknowledgedModel = undefined; chat.confirmation = undefined; chat.snapshot.provider = undefined; chat.snapshot.modelId = undefined; chat.snapshot.reasoningEffort = undefined;
           chat.snapshot.status = 'unknown'; chat.snapshot.error = 'The Hermes backend restarted. Reload stored history; in-flight work is not guaranteed to survive.'; chat.snapshot.cursor += 1;
         }
       }
@@ -407,7 +582,7 @@ export class RealHermesService implements HermesService {
       chat.assistantId = undefined;
     }
     if (type === 'session.info') {
-      if (payload.model) chat.snapshot.model = safeText(payload.model, record.connection, 200);
+      this.applyInfo(record, chat, payload);
     }
     if (type === 'tool.start' || type === 'tool.generating' || type === 'tool.complete') {
       const id = text(payload.tool_id, 200);

@@ -8,7 +8,8 @@ Build a private MCP plugin that presents Hermes chat, profiles and cron inspecti
 - Reuse the Hermes desktop JSON-RPC/WebSocket backend and structured REST management routes. Do not scrape CLI output or duplicate Hermes internals.
 - Keep the React UI, MCP/HTTP bridge, configuration and Hermes protocol adapter separate.
 - First version: local and SSH connections, chat history/send/stop/tool activity/questions/reconnect, profile selection, read-only cron and run history.
-- Do not add cron mutation, model/provider overrides, generic shell execution, remote installs/restarts or public publishing without explicit authorisation.
+- Per-conversation model and reasoning selection is authorised. Inherit each profile's configured defaults and offer its available models; never change the machine's default profile or saved provider configuration.
+- Do not add cron mutation, global model/provider overrides, generic shell execution, remote installs/restarts or public publishing without explicit authorisation.
 
 ## Correctness and security
 
@@ -32,4 +33,3 @@ Build a private MCP plugin that presents Hermes chat, profiles and cron inspecti
 - Commit coherent changes, push them and leave a clean worktree. Never claim host embedding or live Hermes behaviour from unit tests alone.
 - Keep `TODO.md` and `docs/verification.md` accurate. Record completed checks, known limitations and exact evidence without secrets.
 - Use `trash`, never `rm`, for file deletion. Do not modify personal Hermes services/configuration while testing this extension.
-
