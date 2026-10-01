@@ -1,8 +1,8 @@
 # Native Codex UI reference
 
-Inspected on 1 October 2026 against the installed macOS application, version **26.928.21956** (`/Applications/ChatGPT.app/Contents/Info.plist`). This is a source reference for the Hermes interface, not a screenshot measurement or a stable public component contract.
+Inspected on 1 October 2026 against the installed macOS application, version **26.928.21956** (`/Applications/ChatGPT.app/Contents/Info.plist`). Source defaults are supplemented by the user's native composer comparison below. These are implementation references, rather than a stable public component contract.
 
-The reference is the desktop Codex surface. Browser ChatGPT has different typography, spacing and composer variants. The native application can also change its fonts, zoom, corner scale, theme, opacity and picker choices through preferences or account capabilities. The active GUI flags and final 0.2.2 rendered appearance remain unverified. Computer Use access to `com.openai.codex` was denied; the permitted MCP Apps surface separately supplied a native screenshot, loaded-image/font checks and Power menu observation for the earlier profile-rail build. Its evidence and later inspection limits are recorded in [verification](verification.md).
+The reference is the desktop Codex surface. Browser ChatGPT has different typography, spacing and composer variants. The native application can also change its fonts, zoom, corner scale, theme, opacity and picker choices through preferences or account capabilities. Computer Use access to `com.openai.codex` was denied; the permitted MCP Apps surface separately supplied a native screenshot, loaded-image/font checks and Power menu observation for the earlier profile-rail build. The latest composer comparison comes from the user's supplied screenshot. Full updated native interaction acceptance remains incomplete; evidence and inspection limits are recorded in [verification](verification.md).
 
 ## Evidence and supported integration
 
@@ -48,6 +48,12 @@ Width source locations in the ignored readable copies: `app-initial-135a4ef2552c
 Native project rows use title clicks to toggle expansion in the ordinary project list. Selecting a profile and expanding its chats together is an intentional Hermes adaptation. Give the profile and chat rows separate ownership/state: selecting a chat must retain its original profile. Native selected rows use a subdued ghost-hover surface and `aria-current="page"`; focus uses a visible two-pixel ring. Section actions appear on hover/focus/open menus, and remain available on touch devices. Use semantic buttons and `aria-expanded` for disclosures.
 
 ## Composer and transcript
+
+The user's 1 October side-by-side image is 3566×382 pixels. Both 56px send circles imply a 2× capture. Its native and Hermes composer corners trace the same edge, and both surfaces are 196px high: 98 CSS pixels, with 22px corners, 28px controls and an 8px trailing inset. Preserve these matching dimensions.
+
+The visible differences are the model/effort control on Hermes's left instead of the native trailing group, placeholder ink of `#7d7d7d` instead of `#4c4c4c`, and disabled-send fill of `#5c5c5c` instead of `#848484`. Native placeholder CSS inherits the editor font and applies the tertiary colour at 50% opacity; the disabled-send control also uses 50% opacity. The native arrow's ink occupies 20×22 capture pixels versus Hermes's 16×18; using the public 20px ArrowUp icon closes this gap. The native surface is `#1a1a1a` versus Hermes's `#191919`; prefer `--color-background-composer-surface` when the host exposes it, retaining the existing elevated-surface fallback.
+
+Version 0.2.3 applies those measured corrections and the native “Do anything” placeholder. The textarea retains its accessible Message Hermes label. Unavailable voice, attachment and access controls are not added by this visual refinement. Verification of the updated standalone renders and installed resource is recorded in [composer verification](verification-composer.md).
 
 | Detail | Default desktop | Other source variants |
 | --- | --- | --- |

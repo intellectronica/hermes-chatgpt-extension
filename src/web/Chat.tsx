@@ -128,7 +128,7 @@ export function Composer({ draft, onDraft, onSend, onStop, disabled, busy, pendi
   return <footer className="composer-wrap">
     <form className="composer" onSubmit={(event) => { event.preventDefault(); if (!disabled && !busy && !pending && !confirmationPending && draft.trim()) onSend(); }}>
       <label className="sr-only" htmlFor="hermes-composer">Message Hermes</label>
-      <textarea id="hermes-composer" ref={input} rows={1} placeholder="Message Hermes" value={draft}
+      <textarea id="hermes-composer" ref={input} rows={1} placeholder="Do anything" value={draft}
         disabled={disabled} onChange={(event) => onDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -139,7 +139,7 @@ export function Composer({ draft, onDraft, onSend, onStop, disabled, busy, pendi
       <div className="composer-footer">
         <div className="composer-controls">{picker && <ModelPicker {...picker} />}<span className="composer-hint sr-only" role="status">{pending ? 'Waiting for Hermes…' : busy ? 'Hermes is working' : 'Enter to send. Shift+Enter for a new line.'}</span></div>
         {busy ? <button type="button" className="submit-button" onClick={onStop} disabled={pending} aria-label="Stop response" title="Stop response"><Icon name="stop" /></button>
-          : <button type="submit" className="submit-button" disabled={disabled || pending || confirmationPending || !draft.trim()} aria-label="Send message" title="Send message"><Icon name="send" /></button>}
+          : <button type="submit" className="submit-button" disabled={disabled || pending || confirmationPending || !draft.trim()} aria-label="Send message" title="Send message"><Icon name="send" className="send-arrow" /></button>}
       </div>
     </form>
   </footer>;

@@ -12,11 +12,11 @@ import { actionSchemas, actionSummary, dispatchAction, publicError } from './act
 // within one plugin version, so stale HTML cannot occupy the new build's key.
 export function appResourceUri(html: string): string {
   const hash = createHash('sha256').update(html).digest('hex').slice(0, 16);
-  return `ui://hermes/v0.2.2/app-${hash}.html`;
+  return `ui://hermes/v0.2.3/app-${hash}.html`;
 }
 
 export function createMcpServer(service: HermesService, html: string): McpServer {
-  const server = new McpServer({ name: 'hermes', title: 'Hermes', version: '0.2.2', icons: [
+  const server = new McpServer({ name: 'hermes', title: 'Hermes', version: '0.2.3', icons: [
     { src: hermesBrandLight, mimeType: 'image/png', sizes: ['256x256'], theme: 'light' },
     { src: hermesBrandDark, mimeType: 'image/png', sizes: ['256x256'], theme: 'dark' },
   ] });

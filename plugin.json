@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hermes-chatgpt-extension",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Chat with local or remote Hermes using profile sections, avatars and model/reasoning controls inside Codex.",
   "author": {
     "name": "intellectronica",

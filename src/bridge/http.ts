@@ -52,7 +52,7 @@ export async function startHttpBridge(service: HermesService, html: string, opti
         response.end(html);
         return;
       }
-      if (request.method === 'GET' && route === '/health') { json(response, 200, { status: 'ok', version: '0.2.2' }); return; }
+      if (request.method === 'GET' && route === '/health') { json(response, 200, { status: 'ok', version: '0.2.3' }); return; }
       if (request.method !== 'POST' || route !== '/api/actions') { json(response, 404, { error: { code: 'not_found', message: 'This route does not exist.' } }); return; }
       const cookies = new Map((request.headers.cookie ?? '').split(';').map(value => {
         const i = value.indexOf('='); return [value.slice(0, i).trim(), value.slice(i + 1)];

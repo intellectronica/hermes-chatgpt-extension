@@ -9,7 +9,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 
 function EmbeddedApp() {
   const { app, isConnected, error } = useApp({
-    appInfo: { name: 'Hermes', version: '0.2.2' },
+    appInfo: { name: 'Hermes', version: '0.2.3' },
     capabilities: {},
     autoResize: true,
   });

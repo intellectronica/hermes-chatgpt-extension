@@ -1,3 +1,9 @@
+# Composer visual match
+
+- [x] Compare the supplied Codex/Hermes screenshot with current composer and native styles.
+- [x] Match model-control alignment, placeholder typography and send-button treatment.
+- [ ] Verify light/dark desktop/mobile renders, build/install the update and pass CI.
+
 # Interface refinements
 
 - [x] Use Hermes as the app title and the Nous girl as its app icon.
@@ -19,7 +25,7 @@
 - [x] Verify every requested interface behaviour in narrow/wide, light/dark browser renders.
 - [x] Update documentation, build/install v0.2.1 and verify the exact native resource and installed assets.
 - [x] Commit/push the native-interface change and pass GitHub CI (implementation a91b82d, run 36854804124).
-- [ ] Finish native visual and interaction acceptance of 0.2.2. An expanded panel eventually allowed a screenshot, loaded-avatar/font checks and opening the Power menu, but it still holds the earlier profile-rail build. Further inspection timed out; the host connection needs refreshing.
+- [ ] Finish full native visual and interaction acceptance of the latest 0.2.3. The supplied screenshot provides the composer reference; the new package/resource is verified separately. No expanded app is currently available to the permitted inspector, and the current-window proxy timed out.
 
 # First-version checklist
 

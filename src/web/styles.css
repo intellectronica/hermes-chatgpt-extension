@@ -186,15 +186,16 @@ button:disabled { cursor: default; }
 .question-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .question-error { color: var(--hc-error); font-size: 13px; margin: 10px 0 0; }
 .composer-wrap { flex-shrink: 0; width: min(100%, 768px); padding: 0 16px 24px; margin: 0 auto; }
-.composer { border: 0; background: var(--hc-elevated); border-radius: 22px; padding: 14px 12px 8px; box-shadow: 0 0 0 1px light-dark(#0000000a, #0000), 0 2px 8px 0 light-dark(#0000000a, #0000), 0 4px 80px 8px light-dark(#00000006, #0000), inset 0 0 1px 0 light-dark(#0000, #fff3); }
+.composer { border: 0; background: var(--color-background-composer-surface, var(--hc-elevated)); border-radius: 22px; padding: 14px 12px 8px; box-shadow: 0 0 0 1px light-dark(#0000000a, #0000), 0 2px 8px 0 light-dark(#0000000a, #0000), 0 4px 80px 8px light-dark(#00000006, #0000), inset 0 0 1px 0 light-dark(#0000, #fff3); }
 .composer textarea { display: block; width: 100%; resize: none; border: none; outline: none; background: transparent; color: var(--hc-text); line-height: 20px; font-size: var(--hc-base-size); min-height: 44px; max-height: 180px; padding: 0; }
-.composer textarea::placeholder { color: var(--hc-muted); }
-.composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px -4px 0; min-height: 28px; }
+.composer textarea::placeholder { color: var(--color-text-tertiary, var(--hc-muted)); opacity: .5; }
+.composer-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 4px -4px 0; min-height: 28px; }
 .composer-controls { display: flex; min-width: 0; align-items: center; gap: 4px; }
 .composer-hint { color: var(--hc-muted); font-size: 11px; padding-left: 1px; }
 .submit-button { border: none; border-radius: 50%; background: var(--hc-accent); color: var(--hc-on-accent); width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .submit-button svg { width: 16px; height: 16px; }
-.submit-button:disabled { opacity: .3; }
+.submit-button .send-arrow { width: 20px; height: 20px; }
+.submit-button:disabled { opacity: .5; }
 .submit-button:hover:not(:disabled) { opacity: .85; }
 .composer-caption { margin: 8px 0 0; text-align: center; color: var(--hc-muted); font-size: 11px; }
 .model-trigger { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; height: 28px; padding: 0 8px; color: var(--hc-muted); background: transparent; border: 0; border-radius: 9999px; font-size: var(--hc-control-size); line-height: 18px; }

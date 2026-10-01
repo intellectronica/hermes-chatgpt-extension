@@ -4,7 +4,7 @@ A private MCP app and Codex plugin for working with local or remote [Hermes](htt
 
 The extension provides a Codex-styled chat interface, profile sections and cron inspection. Hermes remains the agent runtime; the extension supplies the interface and connection bridge.
 
-## Version 0.2.2
+## Version 0.2.3
 
 - Codex sidebar, composer and menu styling, with host theme tokens, Markdown and a mobile drawer.
 - Saved conversations, streamed replies, tool activity, stop, reconnect, and approval/clarification cards.
@@ -14,10 +14,11 @@ The extension provides a Codex-styled chat interface, profile sections and cron 
 - An installed MCP UI resource, global/thread entrypoints, and a standalone loopback browser interface.
 - Hermes app title and Nous girl icon, concise welcome text, and connection status beneath the instance name in the sidebar footer.
 - **Scheduled** navigation, automated chats hidden by default, and Codex-style chat archiving with Undo.
+- Composer refinements measured against the supplied Codex comparison: model/effort beside Send on the right, the native placeholder treatment and disabled-send brightness, and a 20px arrow.
 
 Hermes owns the agent loop, tools, memory and scheduler. The bridge keeps upstream credentials server-side. Transcript data is returned in UI-only MCP metadata; model-facing tool results contain brief summaries.
 
-The native Codex backend has loaded the plugin, discovered its tools and read the exact built UI. A native screenshot and DOM check show the earlier profile-rail interface, loaded avatars, host fonts and the default model/Power menu. Standalone rendering of 0.2.2 is verified; final native acceptance remains incomplete because the current window holds an earlier connection and further panel inspections time out. See [verification evidence and limitations](docs/verification.md).
+The native Codex backend has loaded version 0.2.3, discovered its tools and read the exact built UI. The supplied native screenshot establishes the composer differences corrected in this release. Standalone rendering and the current desktop window are checked separately; see [composer verification](docs/verification-composer.md) and [verification evidence and limitations](docs/verification.md).
 
 ## Requirements
 

@@ -1,5 +1,7 @@
 # Private Codex plugin verification
 
+The current installed release is **0.2.3**. Its fresh native app-server resource, enabled state and matching source/cache hashes are recorded in [composer verification](verification-composer.md). The following is the retained 0.2.2 installation evidence.
+
 Version **0.2.2** verified on 1 October 2026 using ChatGPT desktop's bundled `codex-cli 0.159.2`. The initial managed source/cache refresh completed at 12:35 UTC. The notification-placement correction was rebuilt, reinstalled and checked through a fresh native app-server process at 13:00 UTC. Native loading and the existing desktop panel are checked separately below.
 
 ## Packaging and installation

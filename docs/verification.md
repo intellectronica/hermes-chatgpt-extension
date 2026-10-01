@@ -1,5 +1,7 @@
 # Native interface verification
 
+Current release **0.2.3** corrects the composer differences in the user's side-by-side Codex screenshot. It right-aligns model/effort beside Send, matches the native placeholder and disabled-send opacity, and enlarges the send arrow to 20px while preserving the matching composer geometry. See [composer comparison, rendered checks and installed resource evidence](verification-composer.md). The evidence below records the earlier 0.2.2 refinement and its native inspection limits.
+
 Version **0.2.2** refines the native-style interface and conversation model controls introduced in 0.2.1. It uses the Hermes app title, Nous girl app icon, shorter welcome copy, connection status beneath the instance name and Scheduled navigation. Tagged automated chats are hidden by default, and conversations can be archived with Codex's sidebar control and Undo. The native styling source is recorded in [the Codex reference](native-ui-reference.md); Hermes API and actual UI settings evidence is recorded in [model/avatar verification](verification-hermes-native.md) and [sidebar/archive verification](verification-sidebar-archive.md).
 
 | Requirement | Evidence | Status |
