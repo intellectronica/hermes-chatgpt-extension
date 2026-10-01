@@ -8,7 +8,7 @@
 - [x] Verify session ownership, profile isolation, defaults and model/effort selection against Hermes.
 - [x] Verify every requested interface behaviour in narrow/wide, light/dark browser renders.
 - [x] Update documentation, build/install v0.2.1 and verify the exact native resource and installed assets.
-- [ ] Commit/push the native-interface change and pass GitHub CI.
+- [x] Commit/push the native-interface change and pass GitHub CI (implementation a91b82d, run 36854804124).
 - [ ] Verify the refreshed v0.2.1 panel in the actual Codex window (the last inspected widget used an older v0.1 connection; the new app link has been provided).
 
 # First-version checklist
