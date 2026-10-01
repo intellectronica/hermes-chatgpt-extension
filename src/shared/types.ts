@@ -55,6 +55,10 @@ export interface ChatRef {
   sessionId: string;
 }
 
+export interface ChatArchiveResult extends ChatRef {
+  archived: boolean;
+}
+
 export interface OpenChatArgs {
   connectionId: string;
   profile: string;
@@ -151,6 +155,7 @@ export interface HermesService {
   listConnections(): Promise<ConnectionSummary[]>;
   listProfiles(connectionId: string): Promise<Profile[]>;
   listSessions(connectionId: string, profile: string): Promise<SessionSummary[]>;
+  archiveChat(ref: ChatRef, archived: boolean): Promise<ChatArchiveResult>;
   listModels(connectionId: string, profile: string): Promise<ModelCatalogue>;
   openChat(args: OpenChatArgs): Promise<ChatSnapshot>;
   configureChat(ref: ChatRef, configuration: ChatConfiguration): Promise<ChatConfigurationResult>;
@@ -164,7 +169,7 @@ export interface HermesService {
 }
 
 export type ActionName =
-  | 'list_connections' | 'list_profiles' | 'list_sessions' | 'open_chat' | 'get_chat'
+  | 'list_connections' | 'list_profiles' | 'list_sessions' | 'archive_chat' | 'open_chat' | 'get_chat'
   | 'list_models' | 'configure_chat' | 'send_message' | 'interrupt_chat' | 'answer_question'
   | 'list_cron_jobs' | 'get_cron_runs';
 
@@ -181,6 +186,7 @@ export interface ActionArgs {
   modelId?: string;
   reasoningEffort?: string;
   confirm?: boolean;
+  archived?: boolean;
 }
 
 /** Trusted bridge-only config. Keep tokens in environment variables or private files. */
@@ -208,4 +214,8 @@ export interface ConnectionConfig {
 
 export interface HermesConfig {
   connections: ConnectionConfig[];
+  sidebar?: {
+    /** Show cron runs and agent-initiated sessions in conversation lists. Defaults to false. */
+    showAutomatedChats?: boolean;
+  };
 }

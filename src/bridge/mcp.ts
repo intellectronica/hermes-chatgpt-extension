@@ -5,17 +5,21 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { HermesService } from '../shared/types';
+import { hermesBrandDark, hermesBrandLight } from '../shared/hermes-brand';
 import { actionSchemas, actionSummary, dispatchAction, publicError } from './actions';
 
 // Hosts cache templates by URI. The content hash also separates local rebuilds
 // within one plugin version, so stale HTML cannot occupy the new build's key.
 export function appResourceUri(html: string): string {
   const hash = createHash('sha256').update(html).digest('hex').slice(0, 16);
-  return `ui://hermes/v0.2.1/app-${hash}.html`;
+  return `ui://hermes/v0.2.2/app-${hash}.html`;
 }
 
 export function createMcpServer(service: HermesService, html: string): McpServer {
-  const server = new McpServer({ name: 'hermes', version: '0.2.1' });
+  const server = new McpServer({ name: 'hermes', title: 'Hermes', version: '0.2.2', icons: [
+    { src: hermesBrandLight, mimeType: 'image/png', sizes: ['256x256'], theme: 'light' },
+    { src: hermesBrandDark, mimeType: 'image/png', sizes: ['256x256'], theme: 'dark' },
+  ] });
   const appUri = appResourceUri(html);
   new OpenAIExtensions(server);
   const resourceMeta = {
@@ -30,7 +34,7 @@ export function createMcpServer(service: HermesService, html: string): McpServer
     contents: [{ uri: appUri, mimeType: RESOURCE_MIME_TYPE, text: html, _meta: resourceMeta }],
   }));
   registerAppTool(server, 'open_hermes', {
-    title: 'Open Hermes',
+    title: 'Hermes',
     description: 'Open the Hermes app to chat with Hermes, switch profiles and view scheduled jobs.',
     inputSchema: z.object({}).shape,
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -47,6 +51,7 @@ export function createMcpServer(service: HermesService, html: string): McpServer
     list_connections: 'List configured Hermes connections.',
     list_profiles: 'List the profiles on one Hermes connection.',
     list_sessions: 'List saved Hermes conversations for one connection and profile.',
+    archive_chat: 'Archive or restore one Hermes conversation without deleting its stored history.',
     list_models: 'Read the selected Hermes profile’s model catalogue and default model/reasoning settings.',
     open_chat: 'Open a saved Hermes conversation, or create a new one in the selected profile.',
     configure_chat: 'Change only the selected Hermes conversation’s model or reasoning effort. Honour any required Hermes confirmation.',
@@ -57,8 +62,8 @@ export function createMcpServer(service: HermesService, html: string): McpServer
     list_cron_jobs: 'Inspect scheduled Hermes jobs for a profile or all profiles. This never changes or runs a job.',
     get_cron_runs: 'Inspect recorded runs of a scheduled Hermes job.',
   };
-  const appOnly = new Set(['list_sessions', 'list_models', 'configure_chat', 'open_chat', 'get_chat', 'send_message', 'interrupt_chat', 'answer_question']);
-  const mutating = new Set(['configure_chat', 'open_chat', 'send_message', 'interrupt_chat', 'answer_question']);
+  const appOnly = new Set(['list_sessions', 'archive_chat', 'list_models', 'configure_chat', 'open_chat', 'get_chat', 'send_message', 'interrupt_chat', 'answer_question']);
+  const mutating = new Set(['archive_chat', 'configure_chat', 'open_chat', 'send_message', 'interrupt_chat', 'answer_question']);
   for (const name of Object.keys(actionSchemas) as (keyof typeof actionSchemas)[]) {
     registerAppTool(server, name, {
       description: descriptions[name],
@@ -67,7 +72,7 @@ export function createMcpServer(service: HermesService, html: string): McpServer
         readOnlyHint: !mutating.has(name),
         destructiveHint: name === 'send_message' || name === 'answer_question',
         openWorldHint: name === 'send_message' || name === 'answer_question',
-        idempotentHint: !mutating.has(name) || name === 'configure_chat',
+        idempotentHint: !mutating.has(name) || name === 'configure_chat' || name === 'archive_chat',
       },
       _meta: { ui: { resourceUri: appUri, visibility: appOnly.has(name) ? ['app'] : ['model', 'app'] } },
     }, async (args: Record<string, unknown>): Promise<CallToolResult> => {

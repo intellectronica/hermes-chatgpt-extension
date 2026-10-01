@@ -27,6 +27,7 @@ jobs:
           name: hermes-extension-build
           path: |
             dist/
+            assets/
             plugin.json
             mcp.json
             skills/

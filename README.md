@@ -4,7 +4,7 @@ A private MCP app and Codex plugin for working with local or remote [Hermes](htt
 
 The extension provides a Codex-styled chat interface, profile sections and cron inspection. Hermes remains the agent runtime; the extension supplies the interface and connection bridge.
 
-## Version 0.2.1
+## Version 0.2.2
 
 - Codex sidebar, composer and menu styling, with host theme tokens, Markdown and a mobile drawer.
 - Saved conversations, streamed replies, tool activity, stop, reconnect, and approval/clarification cards.
@@ -12,10 +12,12 @@ The extension provides a Codex-styled chat interface, profile sections and cron 
 - A Codex-style Power picker and model list using each profile's configured defaults and available provider/model catalogue. Changes affect the selected conversation only.
 - Read-only cron jobs across one or all profiles, plus run history, timezone and delivery status.
 - An installed MCP UI resource, global/thread entrypoints, and a standalone loopback browser interface.
+- Hermes app title and Nous girl icon, concise welcome text, and connection status beneath the instance name in the sidebar footer.
+- **Scheduled** navigation, automated chats hidden by default, and Codex-style chat archiving with Undo.
 
 Hermes owns the agent loop, tools, memory and scheduler. The bridge keeps upstream credentials server-side. Transcript data is returned in UI-only MCP metadata; model-facing tool results contain brief summaries.
 
-The native Codex backend has loaded the plugin, discovered its tools and read the exact built UI. Standalone rendering has been verified; the refreshed native panel is a separate acceptance check. See [verification evidence and limitations](docs/verification.md).
+The native Codex backend has loaded the plugin, discovered its tools and read the exact built UI. A fresh 0.2.1 native panel snapshot showed the profile sections and default model control. Standalone rendering has been verified; final native visual and interaction acceptance remains incomplete. Subsequent inspections timed out, and after installing 0.2.2 the permitted surface has no expanded app tab. See [verification evidence and limitations](docs/verification.md).
 
 ## Requirements
 
@@ -49,13 +51,17 @@ Open the loopback URL printed by the bridge, normally `http://127.0.0.1:4318`. U
 
 Choose a connection, then expand a profile in the sidebar to see its conversations. Select a saved conversation or start a new chat in that profile. Enter sends; Shift+Enter adds a line. Stop interrupts the selected conversation. After an uncertain send, check its status before sending again; the extension never repeats a prompt automatically.
 
+Hover or focus a conversation to reveal **Archive chat**, using Codex's direct sidebar control. Archiving preserves Hermes's history; **Undo** restores that same conversation. The list changes after Hermes confirms the action. Active or uncertain turns must finish or have their status checked before archiving.
+
+Cron runs and chats tagged by Hermes as `kanban`, `tool` or `oneshot` are hidden from the sidebar by default. The filter runs before the list limit, with an additional check for creation provenance and archived pinned rows. To show tagged automated chats, add `"sidebar": { "showAutomatedChats": true }` alongside `connections` in the bridge configuration. Hermes's own `sessions.show_subagents` setting still governs delegated children. Channel sessions with internal wakes retain their channel origin, so they remain visible when Hermes provides no reliable automation tag. The list shows up to 100 eligible conversations within a bounded 500-row candidate window.
+
 Use the model control beneath the message input to select an available model and reasoning effort. A new chat inherits its profile's defaults. The **Reset to default** icon applies the current profile defaults to the selected conversation. Model changes do not edit the profile's saved configuration. When Hermes asks for confirmation, review its message and explicitly accept the choice before continuing.
 
 Open the picker to adjust Power; click the selected model row to open the available model list. Left/Right adjusts effort and Enter closes the picker. Hermes exposes its reasoning dial and model capabilities, rather than a complete per-model effort matrix. The selector hides unsupported reasoning and excludes disabling it when the model requires it. Hermes maps the selected effort to the provider's supported settings.
 
 Selections survive a client reconnect to the same backend. After the private backend restarts, Hermes's watch-only resume can fall back to the profile defaults. The UI displays the selection returned by Hermes; it does not automatically reapply an earlier override.
 
-Use **Cron jobs** to inspect jobs and recorded runs. Missing delivery or scheduler evidence remains unknown. The first version has no job editing or run-now action.
+Use **Scheduled** to inspect jobs and recorded runs. Missing delivery or scheduler evidence remains unknown. The first version has no job editing or run-now action.
 
 ## Install the private Codex plugin
 
@@ -79,9 +85,9 @@ Install/enable **Hermes** through Codex's plugin UI, or use the supported Codex 
 codex plugin add hermes-chatgpt-extension@personal
 ```
 
-Open **Explore → Open Hermes**, or use [Open Hermes](codex://plugins/hermes-chatgpt-extension%40personal/app/open_hermes) after installation in the default `personal` marketplace. Hover its Explore entry and choose **Pin to sidebar** to keep it there. In the older text sidebar, use **Explore → Customize** to pin it.
+Open **Explore → Hermes**, or use [Hermes](codex://plugins/hermes-chatgpt-extension%40personal/app/open_hermes) after installation in the default `personal` marketplace. Hover its Explore entry and choose **Pin to sidebar** to keep it there. In the older text sidebar, use **Explore → Customize** to pin it.
 
-To open it as a tab in the current chat, choose **New tab (+) → More tools… → Plugins and MCPs → Open Hermes**. Asking Codex to open Hermes can produce an inline app; expand that app to use the full interface. [Entrypoints and deep links](https://github.com/openai/mcp-extensions/blob/main/docs/spec.md#deep-links) are provided by the host.
+To open it as a tab in the current chat, choose **New tab (+) → More tools… → Plugins and MCPs → Hermes**. Asking Codex to open Hermes can produce an inline app; expand that app to use the full interface. [Entrypoints and deep links](https://github.com/openai/mcp-extensions/blob/main/docs/spec.md#deep-links) are provided by the host.
 
 Each UI build uses a resource URI containing its version and HTML hash, so a refreshed connection requests the correct template. If the desktop window still holds an older plugin connection, follow its local plugin refresh/restart flow. CLI/backend installation alone does not prove that its current window refreshed.
 

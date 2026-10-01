@@ -1,5 +1,5 @@
 import type {
-  ChatConfiguration, ChatConfigurationResult, ChatRef, ChatSnapshot, ConnectionSummary, CronJob, CronRun,
+  ChatArchiveResult, ChatConfiguration, ChatConfigurationResult, ChatRef, ChatSnapshot, ConnectionSummary, CronJob, CronRun,
   JsonValue, ModelCatalogue, ModelOption, Profile, SessionSummary,
 } from '../shared/types';
 import { ActionError, friendlyError, type HermesApi } from './api';
@@ -24,6 +24,12 @@ export interface ModelConfirmation {
   message: string;
   modelId: string;
   reasoningEffort?: string;
+}
+
+export interface ArchiveNotice {
+  ref: ChatRef;
+  title: string;
+  archived: boolean;
 }
 
 export interface WorkspaceState {
@@ -51,6 +57,9 @@ export interface WorkspaceState {
   pending: Record<string, boolean>;
   uncertain: Record<string, string>;
   attempted: Record<string, string>;
+  archivePending: Record<string, 'archive' | 'restore'>;
+  archiveErrors: Record<string, string>;
+  archiveNotices: Record<string, ArchiveNotice>;
   cron: CronJob[];
   allProfiles: boolean;
   cronLoading: boolean;
@@ -66,7 +75,8 @@ const initialState = (): WorkspaceState => ({
   modelsError: {}, draftChoices: {}, confirmations: {}, connectionId: '', profile: '', sessionId: null,
   tab: 'chat', connectionState: 'disconnected', loading: true, profilesLoading: false,
   sessionsLoading: false, chatLoading: false, error: null, chats: {}, drafts: {}, pending: {},
-  uncertain: {}, attempted: {}, cron: [], allProfiles: false, cronLoading: false, cronError: null,
+  uncertain: {}, attempted: {}, archivePending: {}, archiveErrors: {}, archiveNotices: {},
+  cron: [], allProfiles: false, cronLoading: false, cronError: null,
   selectedJob: null, runs: [], runsLoading: false, runsError: null,
 });
 
@@ -84,6 +94,7 @@ export class WorkspaceStore {
   private requestSequence: Record<string, number> = {};
   private sectionSequence: Record<string, number> = {};
   private catalogueSequence: Record<string, number> = {};
+  private archiveRows: Record<string, { session: SessionSummary; index: number }> = {};
 
   constructor(private readonly api: HermesApi) {}
 
@@ -218,9 +229,18 @@ export class WorkspaceStore {
     const previous = this.state.profileSections[key];
     this.update({ profileSections: { ...this.state.profileSections, [key]: { ...(previous ?? emptySection()), loading: true, error: null } } });
     try {
-      const sessions = await this.api.call<SessionSummary[]>('list_sessions', { connectionId, profile });
+      let sessions = await this.api.call<SessionSummary[]>('list_sessions', { connectionId, profile });
       if (connectionGeneration !== this.connectionGeneration || sequence !== this.sectionSequence[key]) return;
       if (sessions.some((session) => session.profile !== profile)) throw new ActionError('The bridge returned conversations owned by another profile. Reconnect to refresh the list.');
+      // A concurrent list cannot make an archive or restore look acknowledged early.
+      for (const [refKey, operation] of Object.entries(this.state.archivePending)) {
+        const row = this.archiveRows[refKey];
+        if (!row || refKey !== chatKey({ connectionId, profile, sessionId: row.session.id })) continue;
+        if (operation === 'restore') sessions = sessions.filter((session) => session.id !== row.session.id);
+        else if (!sessions.some((session) => session.id === row.session.id)) {
+          sessions = [...sessions]; sessions.splice(Math.min(row.index, sessions.length), 0, row.session);
+        }
+      }
       const selected = generation === this.ownerGeneration && connectionId === this.state.connectionId && profile === this.state.profile;
       this.update({ profileSections: { ...this.state.profileSections, [key]: { ...this.state.profileSections[key], sessions, loading: false, loaded: true, error: null } },
         ...(selected ? { sessions, sessionsLoading: false } : {}) });
@@ -254,6 +274,64 @@ export class WorkspaceStore {
     ++this.sessionGeneration;
     this.lastSession[ownerKey(this.state.connectionId, this.state.profile)] = null;
     this.update({ sessionId: null, tab: 'chat', chatLoading: false, error: null });
+  }
+
+  canArchiveChat(ref: ChatRef): boolean {
+    const key = chatKey(ref);
+    const chat = this.state.chats[key];
+    return Boolean(ref.connectionId && ref.profile && ref.sessionId) && !this.state.pending[key]
+      && !this.state.archivePending[key] && !this.state.uncertain[key] && !this.state.confirmations[key]
+      && chat?.status !== 'streaming' && chat?.status !== 'unknown' && chat?.status !== 'connecting'
+      && !chat?.questions.length;
+  }
+
+  /** Archive is reversible metadata; never infer ownership from the active view. */
+  async archiveChat(ref: ChatRef, archived = true): Promise<boolean> {
+    const key = chatKey(ref);
+    const sectionKey = ownerKey(ref.connectionId, ref.profile);
+    if (!ref.connectionId || !ref.profile || !ref.sessionId || this.state.pending[key] || this.state.archivePending[key] || (archived && !this.canArchiveChat(ref))) return false;
+    const section = this.state.profileSections[sectionKey];
+    const index = section?.sessions.findIndex((session) => session.id === ref.sessionId) ?? -1;
+    if (archived && index >= 0) this.archiveRows[key] = { session: section!.sessions[index], index };
+    const errors = { ...this.state.archiveErrors }; delete errors[key];
+    this.update({ archiveErrors: errors, archivePending: { ...this.state.archivePending, [key]: archived ? 'archive' : 'restore' },
+      pending: { ...this.state.pending, [key]: true } });
+    try {
+      const result = await this.api.call<ChatArchiveResult>('archive_chat', { ...ref, archived });
+      if (result.connectionId !== ref.connectionId || result.profile !== ref.profile || result.sessionId !== ref.sessionId || result.archived !== archived) {
+        throw new ActionError('Hermes returned an archive acknowledgement for another conversation. Refresh the list before trying again.');
+      }
+      // Reject every list started before this ACK, including a same-owner A → B → A read.
+      this.sectionSequence[sectionKey] = (this.sectionSequence[sectionKey] ?? 0) + 1;
+      const current = this.state.profileSections[sectionKey];
+      let sessions = current?.sessions ?? [];
+      const row = this.archiveRows[key];
+      if (archived) sessions = sessions.filter((session) => session.id !== ref.sessionId);
+      else if (row && !sessions.some((session) => session.id === ref.sessionId)) {
+        sessions = [...sessions]; sessions.splice(Math.min(row.index, sessions.length), 0, row.session);
+      }
+      const selectedOwner = this.state.connectionId === ref.connectionId && this.state.profile === ref.profile;
+      const selectedChat = selectedOwner && this.state.sessionId === ref.sessionId;
+      if (archived && this.lastSession[sectionKey] === ref.sessionId) this.lastSession[sectionKey] = null;
+      if (archived && selectedChat) ++this.sessionGeneration;
+      this.update({ profileSections: { ...this.state.profileSections, [sectionKey]: { ...(current ?? emptySection()), sessions, loading: false } },
+        ...(selectedOwner ? { sessions, sessionsLoading: false } : {}),
+        ...(archived && selectedChat ? { sessionId: null, chatLoading: false } : {}),
+        archiveNotices: { ...this.state.archiveNotices, [key]: { ref: { ...ref }, title: row?.session.title || 'Conversation', archived } } });
+      if (!archived) void this.loadProfileSessions(ref.connectionId, ref.profile);
+      return true;
+    } catch (error) {
+      this.update({ archiveErrors: { ...this.state.archiveErrors, [key]: friendlyError(error) } });
+      return false;
+    } finally {
+      const archivePending = { ...this.state.archivePending }; delete archivePending[key];
+      this.update({ archivePending, pending: { ...this.state.pending, [key]: false } });
+    }
+  }
+
+  dismissArchiveNotice(ref: ChatRef) {
+    const archiveNotices = { ...this.state.archiveNotices }; delete archiveNotices[chatKey(ref)];
+    this.update({ archiveNotices });
   }
 
   private configurationBlocked(ref = this.getRef()) {

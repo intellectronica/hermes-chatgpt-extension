@@ -109,7 +109,7 @@ export function Chat({ chat, loading, pending, ready, profile, avatar, onAnswer 
     </section> : <section className="welcome">
       <div className="welcome-mark"><ProfileAvatar avatar={avatar} label={profile || 'Hermes'} size={40} /></div>
       <h1>{ready ? 'What would you like to do?' : 'Connect to Hermes'}</h1>
-      <p>{ready ? `Start a conversation with the ${profile} profile.` : 'Choose a connection and profile to start chatting.'}</p>
+      <p>{ready ? `Start a conversation with ${profile}.` : 'Choose a connection and profile to start chatting.'}</p>
     </section>}
   </div>;
 }

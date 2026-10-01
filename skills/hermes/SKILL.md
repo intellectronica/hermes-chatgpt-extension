@@ -9,6 +9,6 @@ For status requests, use the plugin's structured read tools. Resolve a connectio
 
 Profiles appear as expandable sidebar sections with their Hermes avatars and conversations. Profile selection changes the visible context and the target for new Hermes conversations. It does not change the machine's default profile or reassign existing sessions. The composer model/effort control uses the selected profile's defaults and available models; explicit changes affect the selected conversation only. Honour Hermes's required model confirmations. Treat schedule state, execution outcome and delivery outcome separately; missing evidence is unknown.
 
-Cron inspection remains read-only. Opening Hermes or inspecting status does not authorise prompts, job execution, cron edits, service restarts or connection changes. Keep provider credentials and SSH secrets out of responses.
+The Scheduled view remains read-only. Chat archive/restore is an explicit, reversible conversation action that preserves history; do not archive a chat without the user's request. Opening Hermes or inspecting status does not authorise prompts, job execution, cron edits, service restarts or connection changes. Keep provider credentials and SSH secrets out of responses.
 
 If the application cannot open, report the actual host or backend error. A browser preview or successful MCP resource read does not prove that Codex rendered the embedded UI.

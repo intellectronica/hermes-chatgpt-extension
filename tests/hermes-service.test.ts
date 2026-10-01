@@ -15,6 +15,7 @@ interface Stored {
   model: string;
   provider: string;
   effort: string;
+  archived?: boolean;
 }
 
 /** A real HTTP/WS peer implementing the pinned Hermes contract subset, without any model calls. */
@@ -38,6 +39,11 @@ class Backend {
   lazySnapshot = false;
   avatar = { found: true, mime: 'image/png', size: 8, data: 'data:image/png;base64,iVBORw0KGgo=' };
   extraModels: string[] = [];
+  archiveAck?: boolean;
+  archiveKey?: string;
+  pinnedArchivedRows: Record<string, unknown>[] = [];
+  sessionRows?: Record<string, unknown>[];
+  sessionListQueries: string[] = [];
 
   constructor() {
     this.server = createServer((request, response) => {
@@ -47,7 +53,17 @@ class Backend {
         response.writeHead(401).end(JSON.stringify({ error: this.token })); return;
       }
       response.setHeader('Content-Type', 'application/json');
-      if (url.pathname === '/api/cron/jobs') {
+      if (url.pathname === '/api/profiles/sessions') {
+        this.sessionListQueries.push(url.search);
+        const profile = url.searchParams.get('profile');
+        const excluded = new Set((url.searchParams.get('exclude_sources') ?? '').split(','));
+        const candidates = this.sessionRows ?? [...this.sessions.entries()].filter(([key]) => key.startsWith(`${profile}|`)).map(([, stored]) => ({
+          id: 'same-session', profile, title: `${profile} conversation`, source: 'codex-extension', started_at: 1_796_000_000, archived: stored.archived,
+        }));
+        const filtered = candidates.filter(row => row.profile === profile && !row.archived && !excluded.has(String(row.source)));
+        const offset = Number(url.searchParams.get('offset')) || 0;
+        response.end(JSON.stringify({ sessions: [...filtered.slice(offset, offset + Number(url.searchParams.get('limit'))), ...this.pinnedArchivedRows], total: filtered.length, errors: {} }));
+      } else if (url.pathname === '/api/cron/jobs') {
         const profiles = url.searchParams.get('profile') === 'all' ? ['default', 'work'] : [url.searchParams.get('profile')!];
         response.end(JSON.stringify(profiles.map(profile => ({ id: 'same-job', profile, name: `${profile} job`, enabled: true, schedule_display: 'Every hour', last_status: 'delivery_failed', last_run_at: '2026-09-30T12:00:00Z', last_error: null }))));
       } else if (url.pathname === '/api/cron/jobs/same-job/runs') {
@@ -102,7 +118,12 @@ class Backend {
             } else { session.effort = String(params.value); answer({ key: 'reasoning', value: session.effort, scope: 'session' }); }
             break;
           }
-          case 'session.list': answer({ sessions: session ? [{ id: 'same-session', title: `${profile} conversation`, started_at: 1_796_000_000, source: 'codex-extension' }] : [] }); break;
+          case 'session.list': answer({ sessions: session && !session.archived ? [{ id: 'same-session', title: `${profile} conversation`, started_at: 1_796_000_000, source: 'codex-extension' }] : [] }); break;
+          case 'session.archive':
+            if (!session || params.session_id !== 'same-session') throw new Error('Fixture archive requires a stored ID and its exact profile.');
+            session.archived = params.archived === true;
+            answer({ archived: this.archiveAck ?? session.archived, session_key: this.archiveKey ?? 'same-session' });
+            break;
           case 'session.create':
           case 'session.resume': {
             if (!session) { session = { runtime: `${profile}.runtime`, rows: [], running: false, model: `${profile}-model`, provider: 'fixture', effort: profile === 'default' ? 'high' : 'low' }; this.sessions.set(key, session); }
@@ -154,10 +175,10 @@ class Backend {
 const services: RealHermesService[] = [];
 const backends: Backend[] = [];
 
-async function fixture(): Promise<{ service: RealHermesService; backend: Backend; ref: ChatRef }> {
+async function fixture(showAutomatedChats = false): Promise<{ service: RealHermesService; backend: Backend; ref: ChatRef }> {
   const backend = new Backend(); await backend.start(); backends.push(backend);
   process.env.HERMES_FIXTURE_TOKEN = backend.token;
-  const service = new RealHermesService([{ id: 'remote', label: 'Fixture', kind: 'http', baseUrl: backend.url, tokenEnv: 'HERMES_FIXTURE_TOKEN' }]);
+  const service = new RealHermesService({ connections: [{ id: 'remote', label: 'Fixture', kind: 'http', baseUrl: backend.url, tokenEnv: 'HERMES_FIXTURE_TOKEN' }], sidebar: { showAutomatedChats } });
   services.push(service);
   const chat = await service.openChat({ connectionId: 'remote', profile: 'default' });
   return { service, backend, ref: { connectionId: 'remote', profile: 'default', sessionId: chat.id } };
@@ -170,6 +191,73 @@ afterEach(async () => {
 });
 
 describe('Hermes ownership and transport behaviour', () => {
+  it('excludes automated sources before the sidebar limit without dropping older human chats', async () => {
+    const { service, backend } = await fixture();
+    backend.sessionRows = [
+      ...Array.from({ length: 130 }, (_, index) => ({ id: `cron-${index}`, profile: 'default', source: 'cron', title: 'Job run' })),
+      ...['kanban', 'tool', 'oneshot'].map(source => ({ id: source, profile: 'default', source, title: 'Internal task' })),
+      ...['cli', 'desktop', 'codex-extension', 'api_server', 'telegram', 'unknown'].map(source => ({ id: source, profile: 'default', source, title: 'Conversation' })),
+      { id: 'legacy', profile: 'default', title: 'Older conversation' },
+      { id: 'retagged-cron', profile: 'default', source: 'api_server', created_source: 'cron', title: 'Routed job run' },
+    ];
+    backend.pinnedArchivedRows = [{ id: 'archived-pin', profile: 'default', title: 'Pinned archive', archived: true }];
+    expect((await service.listSessions('remote', 'default')).map(row => row.id)).toEqual(['cli', 'desktop', 'codex-extension', 'api_server', 'telegram', 'unknown', 'legacy']);
+    const query = new URLSearchParams(backend.sessionListQueries.at(-1));
+    expect(query.get('exclude_sources')).toBe('cron,kanban,tool,oneshot');
+    expect(query.get('archived')).toBe('exclude');
+    expect(query.get('profile')).toBe('default');
+    expect(backend.reads.every(read => read.path !== '/api/sessions')).toBe(true);
+  });
+
+  it('can include automated sources through the bridge configuration', async () => {
+    const { service, backend } = await fixture(true);
+    backend.sessionRows = ['cron', 'tool', 'kanban', 'oneshot', 'cli'].map(source => ({ id: source, source, profile: 'default', title: 'Stored chat' }));
+    expect(await service.listSessions('remote', 'default')).toHaveLength(5);
+    expect(new URLSearchParams(backend.sessionListQueries.at(-1)).has('exclude_sources')).toBe(false);
+  });
+
+  it('fills the bounded visible list across pages when retagged automation occupies a page', async () => {
+    const { service, backend } = await fixture();
+    backend.sessionRows = [
+      ...Array.from({ length: 100 }, (_, index) => ({ id: `retagged-${index}`, profile: 'default', source: 'cli', created_source: 'cron', title: 'Retagged run' })),
+      { id: 'human', profile: 'default', source: 'cli', title: 'Human conversation' },
+    ];
+    expect((await service.listSessions('remote', 'default')).map(row => row.id)).toEqual(['human']);
+    expect(backend.sessionListQueries.map(query => new URLSearchParams(query).get('offset'))).toEqual(['0', '100']);
+  });
+
+  it('archives and restores by durable owner without deleting history or changing another profile', async () => {
+    const { service, backend, ref } = await fixture();
+    await service.openChat({ connectionId: 'remote', profile: 'work' });
+    backend.sessions.get('default|same-session')!.rows.push({ row_id: 1, role: 'assistant', text: 'Preserved history' });
+    await expect(service.archiveChat(ref, true)).resolves.toEqual({ ...ref, archived: true });
+    expect(await service.listSessions('remote', 'default')).toEqual([]);
+    expect(await service.listSessions('remote', 'work')).toHaveLength(1);
+    expect(backend.sessions.get('default|same-session')!.rows).toHaveLength(1);
+    await expect(service.archiveChat(ref, false)).resolves.toEqual({ ...ref, archived: false });
+    expect(await service.listSessions('remote', 'default')).toHaveLength(1);
+    expect(backend.calls.filter(call => call.method === 'session.archive').map(call => call.params)).toEqual([
+      { profile: 'default', session_id: 'same-session', archived: true },
+      { profile: 'default', session_id: 'same-session', archived: false },
+    ]);
+    expect(backend.calls.some(call => /delete|prompt.submit/.test(call.method))).toBe(false);
+  });
+
+  it('requires an archive acknowledgement and blocks archiving an active managed turn', async () => {
+    const { service, backend, ref } = await fixture();
+    backend.archiveAck = false;
+    await expect(service.archiveChat(ref, true)).rejects.toThrow('did not confirm');
+    await service.archiveChat(ref, false);
+    backend.archiveKey = 'another-session';
+    await expect(service.archiveChat(ref, false)).rejects.toThrow('did not confirm');
+    backend.archiveKey = undefined;
+    await service.sendMessage(ref, 'Fixture-only message');
+    const before = backend.calls.filter(call => call.method === 'session.archive').length;
+    await expect(service.archiveChat(ref, true)).rejects.toThrow('finish');
+    expect(backend.calls.filter(call => call.method === 'session.archive')).toHaveLength(before);
+    await expect(service.archiveChat({ ...ref, profile: 'all' }, true)).rejects.toThrow('concrete');
+  });
+
   it('inherits each profile’s model and effort without session-create overrides', async () => {
     const { service, backend, ref } = await fixture();
     expect(await service.getChat(ref)).toMatchObject({ model: 'default-model', provider: 'fixture', modelId: modelId('fixture', 'default-model'), reasoningEffort: 'high' });

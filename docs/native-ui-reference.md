@@ -2,7 +2,7 @@
 
 Inspected on 1 October 2026 against the installed macOS application, version **26.928.21956** (`/Applications/ChatGPT.app/Contents/Info.plist`). This is a source reference for the Hermes interface, not a screenshot measurement or a stable public component contract.
 
-The reference is the desktop Codex surface. Browser ChatGPT has different typography, spacing and composer variants. The native application can also change its fonts, zoom, corner scale, theme, opacity and picker choices through preferences or account capabilities. The active GUI flags and the final native renderer have **not** been inspected: Computer Use access to `com.openai.codex` was denied, and no alternative UI access was used.
+The reference is the desktop Codex surface. Browser ChatGPT has different typography, spacing and composer variants. The native application can also change its fonts, zoom, corner scale, theme, opacity and picker choices through preferences or account capabilities. The active GUI flags and final rendered appearance remain unverified. Computer Use access to `com.openai.codex` was denied; the permitted MCP Apps surface separately supplied a partial native DOM snapshot. Its evidence and later inspection limits are recorded in [verification](verification.md).
 
 ## Evidence and supported integration
 
@@ -133,6 +133,16 @@ For direct source inspection, the readable primary file contains the Power keybo
 | Shadow variables | Resolved native small/medium/large shadows |
 
 Baseline native light/dark main surfaces are `#ffffff` / `#181818`, under surfaces `#f9f9f9` / black, and opaque editor/elevated dark surfaces `#212121`. Translucency and theme preferences can change the resulting values; these are not evidence that the active native sidebar visibly uses black. Generic iframe token names do not expose every native sidebar/composer-specific token. Use conservative fallback styling for standalone mode and preserve the host values when embedded.
+
+## Archive controls and app identity
+
+Codex's chat sidebar exposes a direct **Archive chat** button on row hover or keyboard focus. The Work surface has a different overflow-menu variant; the Hermes sidebar uses the Codex variant. Its target is 20×20px, its public Archive glyph is 14px, and it uses a top tooltip with the same accessible label. The action rail is 52px wide with 6px end padding, a 2px margin and 8px gap. The title reserves 36px for the visible action. Activation stops propagation so it does not open the conversation.
+
+Native feedback reads **Archived chat**, offers **Undo**, and disappears after five seconds. The notification is centred at the top of the main pane, inset by 8px below its toolbar, with an intrinsic width constrained to 790px, 12px horizontal/8px vertical padding, 1px border, 15px corners, 14px text and a minimum 42px height. Close has a 24px target. The timer pauses on hover, pointer interaction and a hidden document. Hermes also pauses on keyboard focus. Successful restoration reads **Chat restored**. Native View links to an archived-settings destination; Hermes has no such destination, so that action is omitted.
+
+Source locations in the ignored readable copies: `app-initial-135a4ef2552c.js.readable:133326–133345`, `138589–138612` (control), `133438`, `133483`, `133676–133678` (geometry), `137061–137067`, `110713–110720` (feedback), `76248–76272` (placement); `app-shared-eececb2d2eb0.js.readable:124994–125019`, `55108`, `79166–79182`, `79286–79294`, `79412–79415` (notification styling, duration, pause and close).
+
+The installed host resolves app titles from the tool title before annotations or the RPC name. It resolves app icons from tool icons, falling back to server information, and accepts HTTPS or data URLs there. The current SDK's registered tools do not emit top-level icons; Hermes supplies two theme-specific PNG icons in server information. Plugin listing/composer logos use relative manifest asset paths. The current global/thread entrypoint renderer masks these icons to a monochrome foreground, so the Nous girl identity is supplied without promising its original colours in every host surface. Public contracts: [plugin icon requirements](https://developers.openai.com/plugins/deploy/submission#icons-and-screenshots), [manifest path rules](https://developers.openai.com/plugins/build/plugins#path-rules), [MCP titles](https://github.com/openai/mcp-extensions/blob/main/docs/spec.md#titles) and [MCP icons](https://github.com/openai/mcp-extensions/blob/main/docs/spec.md#icons).
 
 ## Asset provenance
 

@@ -21,6 +21,18 @@ describe('explicit action ownership', () => {
     await dispatchAction(service, 'list_cron_jobs', { connectionId: 'remote', profile: 'all' });
     expect(service.listCron).toHaveBeenCalledWith('remote', 'all');
   });
+  it('archives and restores only an explicitly owned stored conversation', async () => {
+    const service = fakeService();
+    const ref = { connectionId: 'remote', profile: 'research', sessionId: 'stored-1' };
+    for (const archived of [true, false]) {
+      await expect(dispatchAction(service, 'archive_chat', { ...ref, archived })).resolves.toEqual({ ...ref, archived });
+      expect(service.archiveChat).toHaveBeenLastCalledWith(ref, archived);
+    }
+    for (const args of [{ ...ref, profile: 'all', archived: true }, { ...ref }, { connectionId: 'remote', archived: true }]) {
+      await expect(dispatchAction(service, 'archive_chat', args)).rejects.toMatchObject({ code: expect.stringMatching(/invalid_(arguments|profile)/) });
+    }
+    expect(service.archiveChat).toHaveBeenCalledTimes(2);
+  });
   it('scopes model reads and configuration to the explicit profile and stored conversation', async () => {
     const service = fakeService();
     await dispatchAction(service, 'list_models', { connectionId: 'remote', profile: 'research' });
@@ -56,6 +68,11 @@ describe('explicit action ownership', () => {
 });
 
 describe('trusted connection configuration', () => {
+  it('accepts the optional automated-chat visibility setting without changing its default', () => {
+    expect(parseConfig({ connections: [] }).sidebar).toBeUndefined();
+    expect(parseConfig({ connections: [], sidebar: { showAutomatedChats: true } }).sidebar).toEqual({ showAutomatedChats: true });
+    expect(() => parseConfig({ connections: [], sidebar: { showAutomatedChats: 'true' } })).toThrow();
+  });
   it('accepts private managed SSH and HTTPS backends', () => {
     expect(parseConfig({ connections: [{ id: 'remote', label: 'Remote', kind: 'ssh', ssh: { host: 'example-host', mode: 'managed' } }] }).connections).toHaveLength(1);
     expect(parseConfig({ connections: [{ id: 'remote', label: 'Remote', kind: 'http', baseUrl: 'https://hermes.example.org', tokenEnv: 'HERMES_TOKEN' }] }).connections).toHaveLength(1);

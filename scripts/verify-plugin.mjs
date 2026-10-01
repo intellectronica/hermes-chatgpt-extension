@@ -24,6 +24,14 @@ export async function inspectPackage(root = packageRoot, { requireBuild = true }
     assert.ok(portableFields.has(field), `Unsupported portable manifest field: ${field}`);
   }
   assert.ok(plugin.extensions?.['com.openai']?.interface?.displayName);
+  const branding = plugin.extensions['com.openai'].interface;
+  for (const field of ['logo', 'logoDark', 'composerIcon']) {
+    if (branding[field] === undefined) continue;
+    assert.match(branding[field], /^\.\/assets\/[A-Za-z0-9_-]+\.png$/, `${field} must use a bundled asset path.`);
+    const asset = await lstat(path.join(root, branding[field]));
+    assert.ok(asset.isFile() && !asset.isSymbolicLink(), `${field} must be a regular bundled image.`);
+    assert.ok(asset.size > 0 && asset.size <= 5 * 1024 * 1024, `${field} must be no larger than 5 MiB.`);
+  }
   assert.equal(mcp.$schema, mcpSchema, 'Use the canonical portable MCP schema.');
   assert.deepEqual(Object.keys(mcp).sort(), ['$schema', 'mcpServers'].sort());
   assert.deepEqual(Object.keys(mcp.mcpServers), ['hermes']);
@@ -139,6 +147,12 @@ export async function probeServer(root = packageRoot, { timeoutMs = 15_000 } = {
     assert.ok(Array.isArray(tools), 'tools/list must return tools.');
     const opener = tools.find((tool) => tool.name === 'open_hermes');
     assert.ok(opener, 'The opening tool must be named open_hermes.');
+    assert.equal(opener.title, 'Hermes', 'Use Hermes as the displayed app title.');
+    assert.equal(initialized.serverInfo.title, 'Hermes');
+    assert.deepEqual(initialized.serverInfo.icons?.map(({ mimeType, sizes, theme }) => ({ mimeType, sizes, theme })), [
+      { mimeType: 'image/png', sizes: ['256x256'], theme: 'light' },
+      { mimeType: 'image/png', sizes: ['256x256'], theme: 'dark' },
+    ], 'Advertise the bundled Nous girl for both host themes.');
     const resourceUri = opener._meta?.ui?.resourceUri;
     assert.match(resourceUri ?? '', /^ui:\/\//, 'The opening tool must link to a UI resource.');
     const entrypoints = opener._meta?.['openai/ui']?.entrypoints ?? [];

@@ -71,11 +71,16 @@ async function packageContents(root) {
 }
 
 test('planning is dry and portable manifests validate', async () => {
-  const { root, home } = await fixture();
+  const { root, home, plugin } = await fixture();
+  await mkdir(path.join(root, 'assets'));
+  await writeFile(path.join(root, 'assets', 'nous-girl.png'), Buffer.from([137, 80, 78, 71]));
+  plugin.extensions['com.openai'].interface.logo = './assets/nous-girl.png';
+  await writeFile(path.join(root, 'plugin.json'), JSON.stringify(plugin));
   await inspectPackage(root);
   await verifyMarketplace(root);
   const plan = await planInstallation({ root, home });
-  assert.equal(plan.snapshots.length, 5);
+  assert.equal(plan.snapshots.length, 6);
+  assert.deepEqual(plan.snapshots.find(file => file.relative === 'assets/nous-girl.png')?.bytes, Buffer.from([137, 80, 78, 71]));
   assert.equal(await exists(path.join(home, '.codex')), false);
   assert.equal(await exists(plan.marketplacePath), false);
 });
@@ -177,8 +182,8 @@ test('MCP probing reads only initialization, tools and resource, without executi
       const request = JSON.parse(line);
       if (!request.id) return;
       let result;
-      if (request.method === 'initialize') result = { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'hermes-test', version: '1' } };
-      else if (request.method === 'tools/list') result = { tools: [{ name: 'open_hermes', _meta: { ui: { resourceUri: 'ui://hermes/app' }, 'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] } } }] };
+      if (request.method === 'initialize') result = { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'hermes-test', title: 'Hermes', version: '1', icons: ['light','dark'].map(theme => ({ src: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png', sizes: ['256x256'], theme })) } };
+      else if (request.method === 'tools/list') result = { tools: [{ name: 'open_hermes', title: 'Hermes', _meta: { ui: { resourceUri: 'ui://hermes/app' }, 'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] } } }] };
       else if (request.method === 'resources/read') result = { contents: [{ uri: request.params.uri, mimeType: 'text/html;profile=mcp-app', text: '<html>Hermes</html>' }] };
       else { process.stderr.write('Unexpected method'); process.exit(1); }
       process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\\n');

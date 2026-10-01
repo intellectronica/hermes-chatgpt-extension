@@ -14,11 +14,20 @@ describe('portable embedded MCP app', () => {
     try {
       const list = await client.listTools();
       const uri = (list.tools.find(tool => tool.name === 'open_hermes')?._meta?.ui as { resourceUri: string }).resourceUri;
-      expect(uri).toMatch(/^ui:\/\/hermes\/v0\.2\.1\/app-[a-f0-9]{16}\.html$/);
+      expect(uri).toMatch(/^ui:\/\/hermes\/v0\.2\.2\/app-[a-f0-9]{16}\.html$/);
+      expect(list.tools.find(tool => tool.name === 'open_hermes')?.title).toBe('Hermes');
+      expect(client.getServerVersion()).toMatchObject({ title: 'Hermes', icons: [
+        { src: expect.stringMatching(/^data:image\/png;base64,/), mimeType: 'image/png', sizes: ['256x256'], theme: 'light' },
+        { src: expect.stringMatching(/^data:image\/png;base64,/), mimeType: 'image/png', sizes: ['256x256'], theme: 'dark' },
+      ] });
       expect(list.tools.every(tool => (tool._meta?.ui as { resourceUri?: string })?.resourceUri === uri)).toBe(true);
       expect(list.tools.find(tool => tool.name === 'open_hermes')?._meta?.['openai/ui']).toMatchObject({ entrypoints: [{ type: 'global' }, { type: 'thread' }] });
       expect(list.tools.find(tool => tool.name === 'send_message')?._meta?.ui).toMatchObject({ visibility: ['app'] });
       expect(list.tools.find(tool => tool.name === 'list_models')?._meta?.ui).toMatchObject({ visibility: ['app'] });
+      expect(list.tools.find(tool => tool.name === 'archive_chat')).toMatchObject({
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+        _meta: { ui: { visibility: ['app'] } },
+      });
       expect(list.tools.find(tool => tool.name === 'configure_chat')).toMatchObject({
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
         _meta: { ui: { visibility: ['app'] } },

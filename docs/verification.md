@@ -1,16 +1,25 @@
 # Native interface verification
 
-Version **0.2.1** implements the native-style interface and conversation model controls. The acceptance checks below follow the requested outcome. The native styling source is recorded in [the Codex reference](native-ui-reference.md); Hermes API and actual UI settings evidence is recorded in [model/avatar verification](verification-hermes-native.md).
+Version **0.2.2** refines the native-style interface and conversation model controls introduced in 0.2.1. It uses the Hermes app title, Nous girl app icon, shorter welcome copy, connection status beneath the instance name and Scheduled navigation. Tagged automated chats are hidden by default, and conversations can be archived with Codex's sidebar control and Undo. The native styling source is recorded in [the Codex reference](native-ui-reference.md); Hermes API and actual UI settings evidence is recorded in [model/avatar verification](verification-hermes-native.md) and [sidebar/archive verification](verification-sidebar-archive.md).
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| Native Codex appearance | Installed desktop source and browser render: 275px rail, 768px column, 736px composer, 22px composer corners, system typography and host-token mapping | Source/browser verified; refreshed native panel pending |
+| Native Codex appearance | Installed desktop source and browser render: 275px rail, 768px column, 736px composer, 22px composer corners, system typography and host-token mapping; a fresh native snapshot shows the new profile rail and default model control | Source/browser verified; native visual and interaction acceptance incomplete |
 | Expandable profile sections and owned chats | Real profile sections; independently cached children; selected older chat stays visible with compact recent list; profile/draft/race checks | Implemented and browser/test verified |
 | Hermes profile avatars | Six real avatars from `profiles.get_asset`, bounded raster validation and server-side fetching; all six render at 16px | Live API/browser verified |
 | Profile default and available models | Six configured catalogues with 149–151 choices each; every profile default present | Live API verified |
 | Model and reasoning selection | Conversation-scoped `config.set`; native-style Power/menu; actual UI radio/keyboard changes and cancel/confirm/reset with backend read-back, no inference | Adapter, live and browser checks pass |
 | Profile/default isolation | Complete owner routing; all saved profile config/environment/active-profile hashes unchanged after live settings test | Bridge, adapter and live checks pass |
-| Native host package | v0.2.1 installed/enabled; 13 tools, global/thread entrypoints, app-only model controls, exact version-and-hash UI resource read through bundled Codex app-server | Verified; current window refresh remains separate |
+| Native host package | v0.2.2 installed/enabled; 14 tools, Hermes title and two theme icons, global/thread entrypoints, app-only model and archive controls, exact version-and-hash UI resource read through bundled Codex app-server | Verified; current window refresh remains separate |
+| Sidebar filtering and archive | Source exclusions before the list limit, creation-provenance and archived-row checks, configuration toggle, owner-scoped archive acknowledgements and Undo | Adapter/store/component tests and live Hermes archive/restore pass |
+
+Current 0.2.2 checks pass: TypeScript, **81 Vitest checks**, **nine installer checks**, the self-contained build and the 14-tool MCP package/native resource probes. Two opt-in live tests are skipped in the ordinary suite. The separate sidebar/archive run verified six real profiles and reversible archive/restore of the extension-owned echo chat, preserving its transcript and all saved configuration. The native package's exact assets and resource URI are recorded in [plugin verification](verification-plugin.md).
+
+Current standalone browser acceptance covers 1440×900 and 390×844 in light/dark themes. It verifies the shorter welcome text, Scheduled navigation/heading/filter, and Connected under Fnordistan at 12px with a 6px dot. The real Scheduled view returned 11 jobs for the selected profile. No horizontal overflow or page errors occurred. The narrow navigation drawer's axe scan reported zero violations and zero incomplete checks.
+
+A separate static fixture with no Hermes connection verifies the archive control on hover and keyboard focus, acknowledgement-before-removal, same-owner keyboard Undo, narrow success/error behaviour and the source-derived row/control/notification geometry. Its notification axe scan reported zero violations and one incomplete contrast check involving a transient breadcrumb overlap and the SDK Undo button's pseudo-element; that contrast result remains unverified. Screenshots are retained as `hermes-0.2.2-refinements-*` in the task's `outputs` directory. Both owned browser sessions, the static fixture and the owned live HTTP server were closed. These checks made no personal-chat, model-setting or scheduled-job mutations.
+
+## Native-interface baseline (0.2.1)
 
 TypeScript, **66 Vitest checks**, nine guarded installer checks, the self-contained build, the MCP package probe and production dependency audit pass. The two opt-in live checks are skipped in the ordinary suite; the new settings/avatar check passed separately against Fnordistan. Model controls, defaults, profile ownership, race rejection, ambiguity, missing read-back, confirmation and reconnect/restart distinctions are covered. GitHub CI passed for implementation commit `a91b82d903155d15ff37307e8aab71050b17fc10`: [run 36854804124](https://github.com/intellectronica/hermes-chatgpt-extension/actions/runs/36854804124), including the uploaded build artefact.
 
@@ -45,9 +54,13 @@ This records observed results, with native rendering separated from backend load
 
 ## Native GUI acceptance limitation
 
-Computer-use access to `com.openai.codex` was denied by the tool. After the user expanded Hermes, the permitted MCP Apps surface became available and showed the actual connected interface. It still rendered v0.1's profile dropdown and Chats navigation from an earlier running connection. That widget was subsequently closed. The new UI now has a version-and-hash resource URI, following the host's caching contract. Final v0.2.1 native rendering requires a refreshed host connection and expanded panel; backend/resource and standalone browser checks do not prove that refresh occurred. The direct app-opening link was supplied to the user. No bypass, app restart or new chat was used.
+Computer-use access to `com.openai.codex` was denied by the tool. The permitted MCP Apps surface initially showed v0.1's profile dropdown and Chats navigation from an older running connection. A later fresh native DOM snapshot showed the new profile navigation, six profile sections, New chat and Cron jobs, a connected Fnordistan instance, and the composer control “Model and reasoning: muse-spark-1.3-contributor, Max”. This establishes that the new interface rendered inside Codex.
 
-Use [Open Hermes](codex://plugins/hermes-chatgpt-extension%40personal/app/open_hermes), or **Explore → Open Hermes**. Hover the Explore entry and choose **Pin to sidebar** to keep it there; the older text sidebar uses **Explore → Customize**. The installed plugin is enabled. If the host still holds an older connection, follow its local plugin refresh/restart flow. The install and exact resource evidence are recorded in [plugin verification](verification-plugin.md).
+Further permitted screenshot, DOM and style inspection calls timed out, including a command-dispatch deadline error. The panel continued to appear in the MCP Apps registry. Its loaded avatars, expanded conversation lists, model-menu interaction and final visual match remain unverified inside the host. Standalone browser evidence remains separate. No alternative native-window automation, app restart or new chat was used.
+
+After installing 0.2.2, the actual `open_hermes` call succeeded again, but the permitted MCP Apps registry returned no expanded app tabs before or after that call. This does not establish that the newly installed interface rendered in the existing window. The final native appearance and interaction check remains open.
+
+Use [Hermes](codex://plugins/hermes-chatgpt-extension%40personal/app/open_hermes), or **Explore → Hermes**. Hover the Explore entry and choose **Pin to sidebar** to keep it there; the older text sidebar uses **Explore → Customize**. The installed plugin is enabled. If the host still holds an older connection, follow its local plugin refresh/restart flow. The install and exact resource evidence are recorded in [plugin verification](verification-plugin.md).
 
 ## Practical limits
 

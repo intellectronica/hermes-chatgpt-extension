@@ -1,11 +1,41 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@openai/apps-sdk-ui/components/Button';
+import { Archive } from '@openai/apps-sdk-ui/components/Icon';
+import { Tooltip } from '@openai/apps-sdk-ui/components/Tooltip';
 import type { HermesApi } from './api';
-import { chatKey, ownerKey, WorkspaceStore } from './store';
+import { chatKey, ownerKey, WorkspaceStore, type ArchiveNotice } from './store';
 import { Chat, Composer } from './Chat';
 import { Cron } from './Cron';
 import { Icon } from './icons';
 import { ProfileAvatar } from './ProfileAvatar';
+
+function ArchiveToast({ notice, store, pending, error }: { notice: ArchiveNotice; store: WorkspaceStore; pending: boolean; error?: string }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const paused = hovered || focused;
+  const [visible, setVisible] = useState(() => !document.hidden);
+  const remaining = useRef(5000);
+  useEffect(() => { remaining.current = 5000; }, [notice, error]);
+  useEffect(() => {
+    const change = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', change);
+    return () => document.removeEventListener('visibilitychange', change);
+  }, []);
+  useEffect(() => {
+    if (paused || pending || !visible) return;
+    const start = Date.now();
+    const timeout = setTimeout(() => store.dismissArchiveNotice(notice.ref), remaining.current);
+    return () => { clearTimeout(timeout); remaining.current = Math.max(0, remaining.current - (Date.now() - start)); };
+  }, [notice, error, store, paused, pending, visible]);
+  return <div className="archive-toast" role={error ? 'alert' : 'status'} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+    onFocus={() => setFocused(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
+    <div className="archive-toast-leading"><Archive width="16" height="16" aria-hidden="true" /></div>
+    <div className="archive-toast-content"><span className="archive-toast-title">{error ? 'Failed to unarchive conversation' : notice.archived ? 'Archived chat' : 'Chat restored'}</span>
+      {error && <p className="archive-toast-error">{error}</p>}<span className="sr-only">{notice.title}</span></div>
+    {notice.archived && <Button color="primary" size="2xs" gutterSize="xs" className="archive-undo" disabled={pending} onClick={() => void store.archiveChat(notice.ref, false)}>Undo</Button>}
+    <button className="archive-toast-close" type="button" aria-label="Close" onClick={() => store.dismissArchiveNotice(notice.ref)}><Icon name="close" width="16" height="16" /></button>
+  </div>;
+}
 
 export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; embedded?: boolean }) {
   const store = useMemo(() => new WorkspaceStore(api), [api]);
@@ -66,7 +96,6 @@ export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; emb
     return () => { window.removeEventListener('keydown', close); openerRef.current?.focus(); };
   }, [railOpen]);
 
-  const connection = state.connections.find((item) => item.id === state.connectionId);
   const selectedProfile = state.profiles.find((profile) => profile.name === state.profile);
   const profileLabel = selectedProfile?.label ?? state.profile;
   const statusText = { connected: 'Connected', connecting: 'Connecting…', disconnected: 'Disconnected', error: 'Disconnected' }[state.connectionState];
@@ -78,7 +107,7 @@ export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; emb
       <div className="rail-top"><div className="brand"><ProfileAvatar label="Hermes" size={22} /><span>Hermes</span></div><button className="icon-button mobile-close" aria-label="Close navigation" onClick={() => setRailOpen(false)}><Icon name="close" /></button></div>
       <nav className="rail-nav" aria-label="Workspace">
         <button className="rail-button" onClick={() => { store.newChat(); setRailOpen(false); }} disabled={!ready || pending}><Icon name="new" />New chat</button>
-        <button className="rail-button" aria-current={state.tab === 'cron' ? 'page' : undefined} onClick={() => changeTab('cron')}><Icon name="clock" />Cron jobs</button>
+        <button className="rail-button" aria-current={state.tab === 'cron' ? 'page' : undefined} onClick={() => changeTab('cron')}><Icon name="clock" />Scheduled</button>
       </nav>
       <div className="profile-sections" role="navigation" aria-label="Profiles and conversations">
         <p className="rail-label">Profiles</p>
@@ -103,9 +132,19 @@ export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; emb
                 onClick={() => { store.newProfileChat(profile.name); setRailOpen(false); }}><Icon name="plus" width="16" height="16" /></button>
             </div>
             {section?.expanded && <div className="profile-session-list" id={`profile-sessions-${index}`}>
-              {section.loading && !section.loaded ? <p className="session-empty" role="status">Loading chats…</p> : sessions?.map((session) => <button className="session-item" key={session.id}
-                aria-current={selected && state.sessionId === session.id && state.tab === 'chat' ? 'page' : undefined}
-                title={session.title || 'Untitled chat'} onClick={() => { void store.openProfileSession(profile.name, session.id); setRailOpen(false); }}>{session.title || 'Untitled chat'}</button>)}
+              {section.loading && !section.loaded ? <p className="session-empty" role="status">Loading chats…</p> : sessions?.map((session) => {
+                const ref = { connectionId: state.connectionId, profile: profile.name, sessionId: session.id };
+                const rowKey = chatKey(ref);
+                const active = selected && state.sessionId === session.id && state.tab === 'chat';
+                return <div className="session-row" key={session.id} data-selected={active} data-archiving={Boolean(state.archivePending[rowKey])}>
+                  <button className="session-item" aria-current={active ? 'page' : undefined} title={session.title || 'Untitled chat'}
+                    onClick={() => { void store.openProfileSession(profile.name, session.id); setRailOpen(false); }}><span className="session-title">{session.title || 'Untitled chat'}</span><span className="session-title-clearance" aria-hidden="true" /></button>
+                  <div className="session-actions"><Tooltip content="Archive chat" compact><button className="session-archive" type="button" aria-label="Archive chat" disabled={!store.canArchiveChat(ref)}
+                    onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}
+                    onClick={(event) => { event.stopPropagation(); void store.archiveChat(ref).then((archived) => { if (archived && narrow) setRailOpen(false); }); }}><Archive width="14" height="14" aria-hidden="true" /></button></Tooltip></div>
+                  {state.archiveErrors[rowKey] && <p className="session-row-error" role="alert">{state.archiveErrors[rowKey]}</p>}
+                </div>;
+              })}
               {section.error && <div className="section-error" role="alert"><p>{section.error}</p><button onClick={() => void store.loadProfileSessions(state.connectionId, profile.name)}>Retry</button></div>}
               {!section.loading && !section.error && !section.sessions.length && <p className="session-empty">No recent chats</p>}
               {section.sessions.length > 6 && <button className="session-item show-more" onClick={() => setAllSessions({ ...allSessions, [owner]: !allSessions[owner] })}>{allSessions[owner] ? 'Show less' : 'Show more'}</button>}
@@ -116,15 +155,14 @@ export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; emb
       <div className="rail-footer"><div className="rail-footer-text"><div className="scope-select"><label className="sr-only" htmlFor="connection">Connection</label><select id="connection" aria-label="Connection" value={state.connectionId} onChange={(event) => void store.selectConnection(event.target.value)} disabled={state.loading || !state.connections.length}>
         {!state.connections.length && <option value="">{state.loading ? 'Loading…' : 'No connections'}</option>}
         {state.connections.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-      </select></div><span>{connection?.kind === 'ssh' ? 'Remote Hermes' : 'Hermes connection'}</span></div>
+      </select></div><span className="connection-state" title={statusText} role="status"><span className="state-dot" data-status={state.connectionState} aria-hidden="true" />{statusText}</span></div>
         {!embedded && <button className="icon-button" onClick={() => setDark(!dark)} aria-label={dark ? 'Use light theme' : 'Use dark theme'} title={dark ? 'Use light theme' : 'Use dark theme'}><Icon name={dark ? 'sun' : 'moon'} width="18" height="18" /></button>}
       </div>
     </aside>
     <main className="workspace" inert={narrow && railOpen} aria-hidden={narrow && railOpen ? true : undefined}>
       <header className="topbar">
         <button className="icon-button mobile-menu" ref={openerRef} aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen(true)}><Icon name="menu" /></button>
-        <div className="topbar-context"><span className="topbar-profile">{profileLabel || 'Hermes'}</span><span className="context-divider">/</span><span className="topbar-title">{state.tab === 'cron' ? 'Cron jobs' : state.sessions.find((session) => session.id === state.sessionId)?.title || (state.sessionId ? 'Conversation' : 'New chat')}</span></div>
-        <span className="connection-state" title={statusText} role="status"><span className="state-dot" data-status={state.connectionState} />{statusText}</span>
+        <div className="topbar-context"><span className="topbar-profile">{profileLabel || 'Hermes'}</span><span className="context-divider">/</span><span className="topbar-title">{state.tab === 'cron' ? 'Scheduled' : state.sessions.find((session) => session.id === state.sessionId)?.title || (state.sessionId ? 'Conversation' : 'New chat')}</span></div>
       </header>
       {!state.loading && !state.connections.length && <div className="panel-banner"><p>Add a connection in the bridge configuration, then reconnect.</p><Button color="secondary" variant="outline" size="sm" onClick={() => void store.reconnect()}>Reconnect</Button></div>}
       {state.error && <div className="panel-banner error" role="alert"><p>{state.error}</p><Button color="secondary" variant="outline" size="sm" onClick={() => void store.reconnect()}>Reconnect</Button></div>}
@@ -140,6 +178,7 @@ export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; emb
             disabled: !ready || state.chatLoading || pending || Boolean(uncertain || confirmation) || Boolean(chat?.questions.length) || chat?.status === 'streaming' || chat?.status === 'unknown' || chat?.status === 'connecting',
             onModel: (id) => void store.chooseModel(id), onReasoning: (effort) => void store.chooseReasoning(effort), onDefault: () => void store.useProfileDefault(), onReload: () => void store.loadModels() }} />
       </> : <Cron state={state} store={store} />}
+      <div className="archive-toasts">{Object.entries(state.archiveNotices).map(([key, notice]) => <ArchiveToast key={key} notice={notice} store={store} pending={Boolean(state.archivePending[key])} error={state.archiveErrors[key]} />)}</div>
     </main>
   </div>;
 }

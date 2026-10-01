@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hermes-chatgpt-extension",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Chat with local or remote Hermes using profile sections, avatars and model/reasoning controls inside Codex.",
   "author": {
     "name": "intellectronica",
@@ -13,6 +13,9 @@
     "com.openai": {
       "interface": {
         "displayName": "Hermes",
+        "logo": "./assets/nous-girl.png",
+        "logoDark": "./assets/nous-girl-dark.png",
+        "composerIcon": "./assets/nous-girl.png",
         "shortDescription": "Hermes chat, profiles and cron inspection",
         "longDescription": "Work with Hermes through a Codex-styled chat interface. Expand profile sections with Hermes avatars, select a conversation model and reasoning effort, and inspect cron jobs and past runs on local or remote Hermes.",
         "developerName": "intellectronica",

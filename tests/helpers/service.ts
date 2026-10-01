@@ -12,6 +12,7 @@ export function fakeService(): HermesService {
     listConnections: vi.fn(async () => [{ id: 'remote', label: 'Remote Hermes', kind: 'ssh' as const, status: 'connected' as const }]),
     listProfiles: vi.fn(async () => [{ name: 'default', isDefault: true }, { name: 'research' }]),
     listSessions: vi.fn(async () => [{ id: 'stored-1', title: 'Test conversation', profile: 'default' }]),
+    archiveChat: vi.fn(async (ref, archived) => ({ ...ref, archived })),
     listModels: vi.fn(async (connectionId: string, profile: string) => ({ connectionId, profile, defaultModelId: '["provider","model-default"]', defaultReasoningEffort: 'medium',
       reasoningEfforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
       models: [{ id: '["provider","model-default"]', model: 'model-default', label: 'Default model', provider: 'provider', reasoningSupported: true }] })),

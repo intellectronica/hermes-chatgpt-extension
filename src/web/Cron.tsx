@@ -12,12 +12,12 @@ export function Cron({ state, store }: { state: WorkspaceState; store: Workspace
   const detail = useRef<HTMLElement>(null);
   useEffect(() => { detail.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [state.selectedJob?.id, state.selectedJob?.profile]);
   const job = state.selectedJob;
-  return <section className="cron-area" aria-label="Cron jobs">
+  return <section className="cron-area" aria-label="Scheduled">
     <div className="cron-heading">
-      <div><h1>Cron jobs</h1><p>Schedules and run history. Times shown in {DISPLAY_TIMEZONE}.</p></div>
+      <div><h1>Scheduled</h1><p>Schedules and run history. Times shown in {DISPLAY_TIMEZONE}.</p></div>
       <div className="cron-controls">
         <label className="cron-filter">Show
-          <select value={state.allProfiles ? 'all' : 'selected'} onChange={(event) => store.setAllProfiles(event.target.value === 'all')} aria-label="Cron profile filter">
+          <select value={state.allProfiles ? 'all' : 'selected'} onChange={(event) => store.setAllProfiles(event.target.value === 'all')} aria-label="Scheduled profile filter">
             <option value="selected">This profile</option><option value="all">All profiles</option>
           </select>
         </label>
@@ -25,9 +25,9 @@ export function Cron({ state, store }: { state: WorkspaceState; store: Workspace
       </div>
     </div>
     {state.cronError && <div className="panel-banner error" role="alert"><p>{state.cronError}</p><Button color="secondary" variant="outline" size="sm" onClick={() => void store.loadCron()}>Retry</Button></div>}
-    {state.cronLoading ? <div className="empty-loading" role="status">Loading cron jobs…</div>
-      : state.cronError && !state.cron.length ? <p className="cron-cell-secondary">Cron jobs are unavailable until the connection recovers.</p>
-        : !state.cron.length ? <div className="welcome"><div className="welcome-mark"><Icon name="clock" /></div><h1>No cron jobs to show</h1><p>{state.profile ? `No jobs were returned for ${state.allProfiles ? 'this connection' : `the ${state.profile} profile`}.` : 'Choose a connection and profile to see its jobs.'}</p></div>
+    {state.cronLoading ? <div className="empty-loading" role="status">Loading scheduled jobs…</div>
+      : state.cronError && !state.cron.length ? <p className="cron-cell-secondary">Scheduled jobs are unavailable until the connection recovers.</p>
+        : !state.cron.length ? <div className="welcome"><div className="welcome-mark"><Icon name="clock" /></div><h1>No scheduled jobs to show</h1><p>{state.profile ? `No jobs were returned for ${state.allProfiles ? 'this connection' : `the ${state.profile} profile`}.` : 'Choose a connection and profile to see its jobs.'}</p></div>
         : <div className="cron-table-wrap"><table className="cron-table">
           <thead><tr><th scope="col">Job</th><th scope="col">Schedule</th><th scope="col">Next run</th><th scope="col">Execution</th><th scope="col">Delivery</th></tr></thead>
           <tbody>{state.cron.map((item) => <tr key={JSON.stringify([item.profile, item.id])}>

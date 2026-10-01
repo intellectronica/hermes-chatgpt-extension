@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer, QuestionCard } from '../src/web/Chat';
 import { HermesWorkspace } from '../src/web/App';
 import type { HermesApi } from '../src/web/api';
 import { ModelPicker } from '../src/web/ModelPicker';
-import type { ActionName, ActionArgs, ModelCatalogue } from '../src/shared/types';
+import type { ActionName, ActionArgs, ChatArchiveResult, ModelCatalogue } from '../src/shared/types';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -55,6 +55,8 @@ describe('narrow navigation', () => {
     expect(rail?.getAttribute('aria-hidden')).toBe('true');
     fireEvent.click(screen.getByLabelText('Open navigation'));
     expect(screen.getByRole('dialog', { name: 'Hermes navigation' })).toBeTruthy();
+    expect(document.querySelector('.rail-footer [role="status"]')?.textContent).toBe('Disconnected');
+    expect(document.querySelector('.topbar [role="status"]')).toBeNull();
     expect(rail?.hasAttribute('inert')).toBe(false);
     expect(document.querySelector('main')?.hasAttribute('inert')).toBe(true);
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -104,6 +106,49 @@ describe('native composer picker', () => {
 });
 
 describe('profile navigation rendering', () => {
+  it('archives using the direct row control after ACK and makes Undo reachable by closing the narrow drawer', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({ matches: query.includes('max-width'), addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const calls: { action: ActionName; args: ActionArgs }[] = [];
+    let archiveAck!: (result: ChatArchiveResult) => void;
+    const ack = new Promise<ChatArchiveResult>((resolve) => { archiveAck = resolve; });
+    let archived = false;
+    const api: HermesApi = { async call<T>(action: ActionName, args: ActionArgs = {}) {
+      calls.push({ action, args });
+      if (action === 'archive_chat') {
+        if (args.archived) return await ack as T;
+        archived = false;
+        return { connectionId: args.connectionId, profile: args.profile, sessionId: args.sessionId, archived: false } as T;
+      }
+      const values: Partial<Record<ActionName, unknown>> = {
+        list_connections: [{ id: 'local', label: 'Local', kind: 'http', status: 'connected' }], list_profiles: [{ name: 'A', isDefault: true }],
+        list_sessions: archived ? [] : [{ id: 'archive-id', title: 'A chat', profile: 'A' }],
+        list_models: { connectionId: 'local', profile: 'A', models: [], defaultModelId: '', reasoningEfforts: [] },
+      };
+      return values[action] as T;
+    } };
+    render(<HermesWorkspace api={api} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    const chatButton = await screen.findByRole('button', { name: 'A chat' });
+    const row = chatButton.closest<HTMLElement>('.session-row')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Archive chat' }));
+    expect(screen.getByRole('button', { name: 'A chat' })).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Archive chat' }).hasAttribute('disabled')).toBe(true);
+    archived = true; archiveAck({ connectionId: 'local', profile: 'A', sessionId: 'archive-id', archived: true });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Hermes navigation' })).toBeNull());
+    expect(screen.queryByRole('button', { name: 'A chat' })).toBeNull();
+    expect(document.querySelector('main')?.hasAttribute('inert')).toBe(false);
+    expect(screen.getByText('Archived chat')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findByText('Chat restored');
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    expect(await screen.findByRole('button', { name: 'A chat' })).toBeTruthy();
+    expect(calls.filter((call) => call.action === 'archive_chat').map((call) => call.args)).toEqual([
+      { connectionId: 'local', profile: 'A', sessionId: 'archive-id', archived: true },
+      { connectionId: 'local', profile: 'A', sessionId: 'archive-id', archived: false },
+    ]);
+    expect(calls.filter((call) => call.action === 'open_chat')).toHaveLength(0);
+  });
+
   it('keeps the selected older chat visible when the recent section is compact', async () => {
     const api: HermesApi = { async call<T>(action: ActionName, args: ActionArgs = {}) {
       const values: Partial<Record<ActionName, unknown>> = {
@@ -139,15 +184,24 @@ describe('profile navigation rendering', () => {
     } };
     render(<HermesWorkspace api={api} />);
     await screen.findByRole('button', { name: 'A chat' });
+    expect(screen.getByText('Start a conversation with A.')).toBeTruthy();
+    expect(document.querySelector('.rail-footer [role="status"]')?.textContent).toBe('Connected');
+    expect(document.querySelector('.topbar .connection-state')).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Profile' })).toBeNull();
     expect(document.querySelector('[title="A avatar"] img')?.getAttribute('src')).toBe(avatar);
     fireEvent.click(screen.getByRole('button', { name: 'B' }));
     await screen.findByRole('button', { name: 'B chat' });
+    expect(screen.getByText('Start a conversation with B.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'A chat' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'A chat' }));
     await screen.findByText('Current reasoning settings could not be read back.');
     expect(calls.filter((call) => call.action === 'open_chat').at(-1)?.args.profile).toBe('A');
     expect(screen.getByRole('button', { name: 'A' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'A chat' }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(screen.getByRole('button', { name: 'Scheduled' }));
+    expect(screen.getByRole('region', { name: 'Scheduled' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Scheduled' })).toBeTruthy();
+    expect(document.querySelector('.topbar-title')?.textContent).toBe('Scheduled');
+    expect(screen.getByRole('combobox', { name: 'Scheduled profile filter' })).toBeTruthy();
   });
 });

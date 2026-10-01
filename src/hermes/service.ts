@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ChatConfiguration, ChatConfigurationResult, ChatMessage, ChatRef, ChatSnapshot, ConnectionConfig, ConnectionSummary, CronJob, CronRun, HermesConfig, HermesService, JsonValue, ModelCatalogue, ModelOption, OpenChatArgs, Profile, Question, SessionSummary, ToolActivity } from '../shared/types.js';
+import type { ChatArchiveResult, ChatConfiguration, ChatConfigurationResult, ChatMessage, ChatRef, ChatSnapshot, ConnectionConfig, ConnectionSummary, CronJob, CronRun, HermesConfig, HermesService, JsonValue, ModelCatalogue, ModelOption, OpenChatArgs, Profile, Question, SessionSummary, ToolActivity } from '../shared/types.js';
 import { HermesConnection } from './connection.js';
 import { HermesRpcClient, HermesRpcError, HermesTransportError, object, type RpcFrame } from './rpc.js';
 import { avatarData, isModelToken, isReasoningEffort, modelId, REASONING_EFFORTS } from './models.js';
@@ -11,6 +11,7 @@ const MAX_TOOL_TEXT = 6_000;
 const MAX_CHATS = 100;
 const MAX_MODELS = 1_000;
 const METADATA_TTL = 60_000;
+const AUTOMATED_SESSION_SOURCES = ['cron', 'kanban', 'tool', 'oneshot'];
 
 function text(value: unknown, limit = MAX_TEXT): string {
   if (typeof value === 'string') return value.length > limit ? `${value.slice(0, limit)}\n[truncated]` : value;
@@ -89,9 +90,11 @@ interface ConnectionRecord {
 
 export class RealHermesService implements HermesService {
   private readonly connections = new Map<string, ConnectionRecord>();
+  private readonly showAutomatedChats: boolean;
   private disposed = false;
 
   constructor(config: HermesConfig | ConnectionConfig[]) {
+    this.showAutomatedChats = !Array.isArray(config) && config.sidebar?.showAutomatedChats === true;
     const configs = Array.isArray(config) ? config : config.connections;
     for (const config of configs) {
       if (!config.id || this.connections.has(config.id)) throw new Error('Hermes connection IDs must be unique.');
@@ -221,11 +224,49 @@ export class RealHermesService implements HermesService {
   async listSessions(connectionId: string, profile: string): Promise<SessionSummary[]> {
     validProfile(profile);
     const record = await this.connected(connectionId);
-    const result = object(await record.rpc.request('session.list', { profile, limit: 100 }, 60_000));
-    return rows(result.sessions).slice(0, 100).map(row => ({
-      id: text(row.id, 256), title: safeText(row.title || 'Untitled chat', record.connection, 200), profile,
-      updatedAt: iso(row.last_active ?? row.started_at), source: text(row.source, 100),
-    })).filter(row => row.id);
+    const query = new URLSearchParams({ profile, limit: '100', offset: '0', archived: 'exclude', order: 'recent' });
+    if (!this.showAutomatedChats) query.set('exclude_sources', AUTOMATED_SESSION_SOURCES.join(','));
+    // This read-only route filters in SQL before LIMIT; /api/sessions may auto-archive.
+    // Hermes's saved show_subagents setting continues to govern delegated children.
+    const sessions: SessionSummary[] = [];
+    const seen = new Set<string>();
+    // Retagged automation and pinned archived rows can survive the native source filter.
+    // Scan at most the endpoint's 500-row per-profile window to fill 100 visible chats.
+    for (let offset = 0; offset < 500 && sessions.length < 100; offset += 100) {
+      query.set('offset', String(offset));
+      const result = object(await record.connection.get(`/api/profiles/sessions?${query}`));
+      if (Object.keys(object(result.errors)).length) throw new Error('Hermes could not read this profile’s conversations. Check the connection and retry.');
+      const candidates = rows(result.sessions).slice(0, 100);
+      if (candidates.some(row => row.profile !== undefined && row.profile !== profile)) throw new Error('Hermes returned conversations owned by another profile. Refresh this connection.');
+      for (const row of candidates) {
+        const id = text(row.id, 256);
+        if (!id || seen.has(id) || row.archived === true || row.archived === 1) continue;
+        if (!this.showAutomatedChats && AUTOMATED_SESSION_SOURCES.some(source => row.source === source || row.created_source === source)) continue;
+        seen.add(id);
+        sessions.push({ id, title: safeText(row.title || 'Untitled chat', record.connection, 200), profile,
+          updatedAt: iso(row.last_active ?? row.started_at), source: text(row.source, 100) });
+        if (sessions.length === 100) break;
+      }
+      if (candidates.length < 100) break;
+    }
+    return sessions;
+  }
+
+  async archiveChat(ref: ChatRef, archived: boolean): Promise<ChatArchiveResult> {
+    validProfile(ref.profile);
+    validId(ref.sessionId);
+    if (typeof archived !== 'boolean') throw new Error('Choose whether to archive or restore this conversation.');
+    const record = await this.connected(ref.connectionId);
+    const chat = record.chats.get(this.key(ref));
+    if (archived && chat && (chat.sending || chat.configuring || chat.attaching || chat.snapshot.status === 'streaming' || chat.snapshot.status === 'unknown' || chat.pending.size > 0 || chat.snapshot.questions.length > 0)) {
+      throw new Error('Wait for this conversation to finish and check its status before archiving it.');
+    }
+    // Use the durable ID without resuming a runtime; Hermes archives its compression lineage.
+    const result = object(await record.rpc.request('session.archive', {
+      profile: ref.profile, session_id: ref.sessionId, archived,
+    }, 30_000));
+    if (result.archived !== archived || result.session_key !== ref.sessionId) throw new Error('Hermes did not confirm this conversation’s archive status. Refresh the list to check it.');
+    return { ...ref, archived };
   }
 
   async openChat(args: OpenChatArgs): Promise<ChatSnapshot> {

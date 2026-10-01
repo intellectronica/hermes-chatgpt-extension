@@ -1,3 +1,13 @@
+# Interface refinements
+
+- [x] Use Hermes as the app title and the Nous girl as its app icon.
+- [x] Shorten the welcome text to “Start a conversation with <profile>.”
+- [x] Move connection status below the instance name in the sidebar footer.
+- [x] Rename the scheduled-jobs view to Scheduled.
+- [x] Hide automated chats by default, with a configuration option to include them.
+- [x] Archive chats using Codex's sidebar interaction while preserving their history.
+- [ ] Build, install and verify these refinements; pass GitHub CI.
+
 # Native interface and model controls
 
 - [x] Verify current Codex sidebar, composer and model/effort selector styling and behaviour.
@@ -9,7 +19,7 @@
 - [x] Verify every requested interface behaviour in narrow/wide, light/dark browser renders.
 - [x] Update documentation, build/install v0.2.1 and verify the exact native resource and installed assets.
 - [x] Commit/push the native-interface change and pass GitHub CI (implementation a91b82d, run 36854804124).
-- [ ] Verify the refreshed v0.2.1 panel in the actual Codex window (the last inspected widget used an older v0.1 connection; the new app link has been provided).
+- [ ] Finish native visual and interaction acceptance. A fresh 0.2.1 MCP Apps snapshot showed the new profile rail and default model control; subsequent inspections timed out. After installing 0.2.2, the opener succeeds but the permitted surface has no expanded app tab.
 
 # First-version checklist
 

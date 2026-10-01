@@ -97,7 +97,9 @@ export async function planInstallation({ root = packageRoot, home = os.homedir()
     mcp.mcpServers.hermes.args = ['${PLUGIN_ROOT}/dist/server.cjs', '--stdio', '--config', config];
   }
   const notices = await statOrMissing(path.join(root, 'THIRD_PARTY_NOTICES.md'));
-  const files = [...packageFiles, ...(notices ? ['THIRD_PARTY_NOTICES.md'] : []), ...await collectFiles(root, 'skills/hermes')];
+  const assets = await statOrMissing(path.join(root, 'assets'));
+  const files = [...packageFiles, ...(notices ? ['THIRD_PARTY_NOTICES.md'] : []),
+    ...(assets ? await collectFiles(root, 'assets') : []), ...await collectFiles(root, 'skills/hermes')];
   const snapshots = [];
   for (const relative of files) {
     const stat = await lstat(path.join(root, relative));

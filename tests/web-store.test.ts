@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ActionArgs, ActionName, ChatSnapshot, CronJob, CronRun, ModelCatalogue, SessionSummary } from '../src/shared/types';
+import type { ActionArgs, ActionName, ChatArchiveResult, ChatSnapshot, CronJob, CronRun, ModelCatalogue, SessionSummary } from '../src/shared/types';
 import type { HermesApi } from '../src/web/api';
 import { chatKey, ownerKey, WorkspaceStore } from '../src/web/store';
 
@@ -39,6 +39,7 @@ class FakeApi implements HermesApi {
       list_models: catalogue(args.profile),
       configure_chat: { chat: { ...snapshot(args.profile, 2), ...(args.modelId ? { modelId: args.modelId } : {}), ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}) } },
       open_chat: snapshot(args.profile), get_chat: snapshot(args.profile), send_message: snapshot(args.profile),
+      archive_chat: { connectionId: args.connectionId, profile: args.profile, sessionId: args.sessionId, archived: args.archived },
     };
     return defaults[action] as T;
   }
@@ -180,6 +181,98 @@ describe('workspace isolation', () => {
   });
 });
 
+describe('archive ownership and acknowledgement', () => {
+  const ref = { connectionId: 'local', profile: 'A', sessionId: 'same-id' };
+  const session = (profile = 'A'): SessionSummary => ({ id: 'same-id', title: `${profile} chat`, profile });
+
+  it('keeps the row until ACK, blocks duplicates, then clears only the selected chat and preserves its drafts and new-chat settings', async () => {
+    const api = new FakeApi(); api.overrides.list_sessions = async (args) => [session(args.profile)];
+    const store = new WorkspaceStore(api); await store.initialise();
+    store.setDraft('New A draft'); await store.chooseModel(catalogue().models[2].id);
+    const newDraftKey = store.getDraftKey(); const newChoice = store.getSnapshot().draftChoices[newDraftKey];
+    await store.openSession(ref.sessionId); store.setDraft('Saved A draft');
+    const ack = deferred<ChatArchiveResult>(); api.overrides.archive_chat = () => ack.promise;
+    const archiving = store.archiveChat(ref);
+    expect(store.getSnapshot().sessions).toEqual([session()]);
+    expect(store.getSnapshot().sessionId).toBe(ref.sessionId);
+    expect(store.canArchiveChat(ref)).toBe(false);
+    await store.archiveChat(ref);
+    expect(api.calls.filter((call) => call.action === 'archive_chat')).toHaveLength(1);
+    api.overrides.list_sessions = async () => [];
+    await store.loadProfileSessions();
+    expect(store.getSnapshot().sessions).toEqual([session()]);
+    ack.resolve({ ...ref, archived: true }); await archiving;
+    expect(store.getSnapshot().sessions).toEqual([]);
+    expect(store.getSnapshot().sessionId).toBeNull();
+    expect(store.getSnapshot().drafts[chatKey(ref)]).toBe('Saved A draft');
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('New A draft');
+    expect(store.getSnapshot().draftChoices[newDraftKey]).toEqual(newChoice);
+    expect(store.getSnapshot().archiveNotices[chatKey(ref)].ref).toEqual(ref);
+  });
+
+  it.each(['lost ACK', 'wrong owner', 'wrong operation'])('preserves the row and active draft after %s', async (failure) => {
+    const api = new FakeApi(); api.overrides.list_sessions = async (args) => [session(args.profile)];
+    const store = new WorkspaceStore(api); await store.initialise(); await store.openSession(ref.sessionId); store.setDraft('Do not lose this');
+    api.overrides.archive_chat = async () => {
+      if (failure === 'lost ACK') throw new Error('Lost acknowledgement');
+      return { ...ref, ...(failure === 'wrong owner' ? { profile: 'B' } : {}), archived: failure !== 'wrong operation' };
+    };
+    expect(await store.archiveChat(ref)).toBe(false);
+    expect(store.getSnapshot().sessions).toEqual([session()]);
+    expect(store.getSnapshot().sessionId).toBe(ref.sessionId);
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('Do not lose this');
+    expect(store.getSnapshot().archiveNotices).toEqual({});
+    expect(store.getSnapshot().archiveErrors[chatKey(ref)]).toBeTruthy();
+    expect(store.canArchiveChat(ref)).toBe(true);
+  });
+
+  it('archives A while B is visible and restores the same A owner without changing B’s chat or settings', async () => {
+    const api = new FakeApi(); api.overrides.list_sessions = async (args) => [session(args.profile)];
+    const store = new WorkspaceStore(api); await store.initialise(); await store.openSession(ref.sessionId);
+    const ack = deferred<ChatArchiveResult>(); api.overrides.archive_chat = () => ack.promise;
+    const archiving = store.archiveChat(ref);
+    await store.selectProfile('B'); await store.openSession('same-id'); store.setDraft('B draft');
+    const bSelection = store.getModelSelection(); const bChat = store.getChat();
+    ack.resolve({ ...ref, archived: true }); await archiving;
+    expect(store.getChat()).toEqual(bChat);
+    expect(store.getSnapshot().profileSections[ownerKey('local', 'A')].sessions).toEqual([]);
+    expect(store.getSnapshot().sessions).toEqual([session('B')]);
+    api.overrides.archive_chat = async (args) => ({ connectionId: args.connectionId, profile: args.profile, sessionId: args.sessionId, archived: args.archived });
+    await store.archiveChat(ref, false); await tick();
+    expect(api.calls.filter((call) => call.action === 'archive_chat').map((call) => call.args)).toEqual([{ ...ref, archived: true }, { ...ref, archived: false }]);
+    expect(store.getSnapshot().profileSections[ownerKey('local', 'A')].sessions).toEqual([session()]);
+    expect(store.getChat()).toEqual(bChat);
+    expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('B draft');
+    expect(store.getModelSelection()).toEqual(bSelection);
+    expect(store.getSnapshot().archiveNotices[chatKey(ref)].archived).toBe(false);
+  });
+
+  it('rejects a stale list after archive ACK and clears the same selected chat after A → B → A', async () => {
+    const api = new FakeApi(); api.overrides.list_sessions = async (args) => [session(args.profile)];
+    const store = new WorkspaceStore(api); await store.initialise(); await store.openSession(ref.sessionId);
+    const ack = deferred<ChatArchiveResult>(); api.overrides.archive_chat = () => ack.promise;
+    const archiving = store.archiveChat(ref);
+    await store.selectProfile('B'); await store.selectProfile('A'); await tick();
+    expect(store.getSnapshot().sessionId).toBe(ref.sessionId);
+    const list = deferred<SessionSummary[]>(); api.overrides.list_sessions = () => list.promise;
+    const reading = store.loadProfileSessions();
+    ack.resolve({ ...ref, archived: true }); await archiving;
+    list.resolve([session()]); await reading;
+    expect(store.getSnapshot().sessionId).toBeNull();
+    expect(store.getSnapshot().sessions).toEqual([]);
+    expect(store.getSnapshot().profileSections[ownerKey('local', 'A')].sessions).toEqual([]);
+  });
+
+  it('does not archive a live turn or an unknown prompt handoff', async () => {
+    const api = new FakeApi(); const store = new WorkspaceStore(api); await store.initialise();
+    api.overrides.open_chat = async () => ({ ...snapshot(), status: 'streaming' }); await store.openSession(ref.sessionId);
+    expect(await store.archiveChat(ref)).toBe(false);
+    api.overrides.open_chat = async () => ({ ...snapshot('A', 2), status: 'unknown' }); await store.openSession(ref.sessionId);
+    expect(await store.archiveChat(ref)).toBe(false);
+    expect(api.calls.filter((call) => call.action === 'archive_chat')).toHaveLength(0);
+  });
+});
+
 describe('cron inspection ownership', () => {
   it('uses each job’s owner in the all-profile view and rejects a late same-ID response', async () => {
     const api = new FakeApi();
@@ -261,6 +354,9 @@ describe('native profile sections and conversation settings', () => {
     expect(store.getSnapshot().drafts[store.getDraftKey()]).toBe('Keep this draft');
     expect(store.getSnapshot().uncertain).toEqual({});
     expect(store.getSnapshot().confirmations[store.getDraftKey()].message).toBe('Hermes asks you to confirm this selection.');
+    expect(store.canArchiveChat(store.getRef()!)).toBe(false);
+    await store.archiveChat(store.getRef()!);
+    expect(api.calls.filter((call) => call.action === 'archive_chat')).toHaveLength(0);
     await store.send();
     expect(api.calls.filter((call) => call.action === 'configure_chat')).toHaveLength(1);
     await store.selectProfile('B');

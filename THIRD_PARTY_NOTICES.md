@@ -2,7 +2,7 @@
 
 ## Hermes desktop brand images
 
-The fallback brand images in `src/web/hermes-avatar.ts` are unmodified copies of
+The app icons in `assets/` and embedded brand images in `src/shared/hermes-brand.ts` are unmodified copies of
 `apps/desktop/public/nous-girl.png` and `apps/desktop/public/nous-girl-dark.png`
 from [Hermes Agent](https://github.com/NousResearch/hermes-agent), by Nous Research.
 They were verified against the installed Hermes revision

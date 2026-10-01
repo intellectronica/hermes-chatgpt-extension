@@ -15,6 +15,7 @@ export const actionSchemas = {
   list_connections: z.object({}).strict(),
   list_profiles: z.object({ connectionId }).strict(),
   list_sessions: z.object(selection).strict(),
+  archive_chat: z.object({ ...owner, archived: z.boolean() }).strict(),
   list_models: z.object(selection).strict(),
   open_chat: z.object({ ...selection, sessionId: sessionId.optional() }).strict(),
   configure_chat: z.object({ ...owner, ...modelSelection, confirm: z.boolean().optional() }).strict(),
@@ -48,6 +49,7 @@ export async function dispatchAction(service: HermesService, action: string, inp
     case 'list_connections': return service.listConnections();
     case 'list_profiles': return service.listProfiles(ref.connectionId);
     case 'list_sessions': return service.listSessions(ref.connectionId, ref.profile);
+    case 'archive_chat': return service.archiveChat(ref, args.archived as boolean);
     case 'list_models': return service.listModels(ref.connectionId, ref.profile);
     case 'open_chat': return service.openChat({ connectionId: ref.connectionId, profile: ref.profile, ...(args.sessionId ? { sessionId: ref.sessionId } : {}) });
     case 'configure_chat': return service.configureChat(ref, configuration);

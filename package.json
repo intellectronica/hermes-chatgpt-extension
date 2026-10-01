@@ -1,6 +1,6 @@
 {
   "name": "hermes-chatgpt-extension",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "A private Codex and ChatGPT MCP app for Hermes chat, profiles and cron inspection",
   "type": "module",

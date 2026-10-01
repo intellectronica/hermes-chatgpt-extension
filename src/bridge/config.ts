@@ -5,6 +5,7 @@ import type { HermesConfig } from '../shared/types';
 
 const nonempty = z.string().min(1).max(500);
 const configSchema = z.object({
+  sidebar: z.object({ showAutomatedChats: z.boolean().optional() }).strict().optional(),
   connections: z.array(z.object({
     id: z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/),
     label: z.string().min(1).max(120),

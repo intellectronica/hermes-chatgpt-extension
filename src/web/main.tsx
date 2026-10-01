@@ -9,7 +9,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 
 function EmbeddedApp() {
   const { app, isConnected, error } = useApp({
-    appInfo: { name: 'Hermes ChatGPT Extension', version: '0.2.1' },
+    appInfo: { name: 'Hermes', version: '0.2.2' },
     capabilities: {},
     autoResize: true,
   });
