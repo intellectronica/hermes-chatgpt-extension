@@ -19,7 +19,7 @@
 - [x] Verify every requested interface behaviour in narrow/wide, light/dark browser renders.
 - [x] Update documentation, build/install v0.2.1 and verify the exact native resource and installed assets.
 - [x] Commit/push the native-interface change and pass GitHub CI (implementation a91b82d, run 36854804124).
-- [ ] Finish native visual and interaction acceptance. A fresh 0.2.1 MCP Apps snapshot showed the new profile rail and default model control; subsequent inspections timed out. After installing 0.2.2, the opener succeeds but the permitted surface has no expanded app tab.
+- [ ] Finish native visual and interaction acceptance of 0.2.2. An expanded panel eventually allowed a screenshot, loaded-avatar/font checks and opening the Power menu, but it still holds the earlier profile-rail build. Further inspection timed out; the host connection needs refreshing.
 
 # First-version checklist
 

@@ -98,6 +98,7 @@ button:disabled { cursor: default; }
 .session-archive:hover:not(:disabled) { background: var(--hc-selected); }
 .session-archive:disabled { opacity: .35; }
 .session-row-error { margin: 2px 8px 6px; color: var(--hc-error); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.archive-toast-anchor { position: relative; height: 0; flex-shrink: 0; }
 .archive-toasts { position: absolute; z-index: 30; top: 8px; left: 50%; transform: translateX(-50%); width: calc(100% - 16px); max-width: 790px; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
 .archive-toast { pointer-events: auto; display: inline-flex; align-items: center; gap: 12px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--hc-border); border-radius: var(--border-radius-xl, 15px); background: var(--hc-elevated); color: var(--hc-text); box-shadow: 0 4px 12px rgba(0, 0, 0, .1); font-size: var(--hc-base-size); }
 .archive-toast-leading { display: flex; width: 24px; height: 24px; flex-shrink: 0; align-items: center; justify-content: center; }

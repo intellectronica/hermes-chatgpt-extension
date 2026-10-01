@@ -1,6 +1,6 @@
 # Private Codex plugin verification
 
-Version **0.2.2** verified on 1 October 2026 using ChatGPT desktop's bundled `codex-cli 0.159.2`. The managed source/cache refresh completed at 12:35 UTC, followed by an exact native resource check in a fresh app-server process. Native loading and the existing desktop panel are checked separately below.
+Version **0.2.2** verified on 1 October 2026 using ChatGPT desktop's bundled `codex-cli 0.159.2`. The initial managed source/cache refresh completed at 12:35 UTC. The notification-placement correction was rebuilt, reinstalled and checked through a fresh native app-server process at 13:00 UTC. Native loading and the existing desktop panel are checked separately below.
 
 ## Packaging and installation
 
@@ -44,7 +44,7 @@ The installer retained the previous source directory and marketplace file in tim
 - The skill-creator validator accepts `skills/hermes/SKILL.md`.
 - Native `plugin/read` recognises MCP server `hermes`, bundled skill `hermes-chatgpt-extension:hermes` and display name `Hermes`.
 - A separate app-server process started with `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex app-server --listen stdio://`. After protocol initialisation, `mcpServerStatus/list` with `serverName: "hermes"` and `detail: "full"` discovers the installed plugin's 14 tools with `toolsError: null`, server version `0.2.2`, title Hermes and two 256×256 theme icons. Both model controls and `archive_chat` have app-only visibility. This checks the native backend's command and `${PLUGIN_ROOT}` expansion. Its owned process was closed after verification.
-- Native `mcpServer/resource/read` with `server: "hermes"` and `uri: "ui://hermes/v0.2.2/app-a1ba79353f8a032e.html"` returns `text/html;profile=mcp-app`. The returned HTML matches the rebuilt file's SHA-256, including the URI's hash prefix. This check reads the resource without calling Hermes tools or creating a chat.
+- Native `mcpServer/resource/read` with `server: "hermes"` and `uri: "ui://hermes/v0.2.2/app-597130e7eace22dc.html"` returns `text/html;profile=mcp-app`. The returned HTML matches the rebuilt file's SHA-256, including the URI's hash prefix. This check reads the resource without calling Hermes tools or creating a chat.
 - Every rendering tool refers to the same resource URI, containing the plugin version and the HTML’s SHA-256 prefix. Identical builds produce the same key; changed HTML produces a different key. The earlier URI was also v0.1's cache key; the structural update now follows the [official resource caching guidance](https://developers.openai.com/plugins/build/chatgpt-ui). The plugin includes the Hermes brand images' MIT notice, also embedded in the self-contained HTML.
 
 The rebuilt artefacts have these hashes in the working tree, installed source and native cache:
@@ -52,18 +52,18 @@ The rebuilt artefacts have these hashes in the working tree, installed source an
 | File | SHA-256 |
 | --- | --- |
 | `dist/server.cjs` | `7a0455f5801b86c36480a2c549cac78fff120f008668070c24fc9a16c23ae33a` |
-| `dist/ui.html` | `a1ba79353f8a032e841674130b46df209a8d26473ef1a6c6b9248b48266b6109` |
+| `dist/ui.html` | `597130e7eace22dce204aae22efcb3d4e063465bfd31fcd1bc2a632f53b0ebb2` |
 | `THIRD_PARTY_NOTICES.md` | `476930b1540e59a2c8c3fdff0b9182765ad5efdbe99075ffa04be0a1a173852e` |
 | `assets/nous-girl.png` | `8b4a61752b89aade9e176247e262197fa0748603dd7fc03f8b5a3b24a4445184` |
 | `assets/nous-girl-dark.png` | `66d0b49e6fad2f1df68c3788dfd60d694c5261fdf1a55891b0cc1b677024141b` |
 
 These checks establish native backend loading and resource transport. They do not establish that the current desktop window has refreshed its catalogue or rendered the embedded panel.
 
-The actual model-visible `open_hermes` call succeeded. The first user-expanded panel showed the older v0.1 dropdown/Chats design. Its host variables resolved to a 14px base, 13px controls, weight 430 and Geist/Inter/system fonts. A later fresh native DOM snapshot showed 0.2.1's profile sections, six profiles, New chat, Cron jobs, a connected Fnordistan instance and the configured model/Max control. This establishes partial native rendering of the new composition. It does not establish loaded avatars, expanded conversation children, model-menu interaction or a final visual match.
+The actual model-visible `open_hermes` call succeeded. The first user-expanded panel showed the older v0.1 dropdown/Chats design. Its host variables resolved to a 14px base, 13px controls, weight 430 and Geist/Inter/system fonts. Later native DOM and screenshot checks show the earlier profile-rail composition, six profiles, expanded Fnord conversations, loaded avatars, host typography, a connected Fnordistan instance and the configured model/Max control. Opening its Power menu succeeded. The panel still uses the pre-refinement copy and navigation; these observations establish that baseline's native rendering, not the exact installed 0.2.2 appearance.
 
 ## Remaining desktop acceptance check
 
-The Computer Use tool refused access to `com.openai.codex` with “Computer Use is not allowed to use the app 'com.openai.codex' for safety reasons.” The user subsequently expanded Hermes, allowing the partial inspection above through the permitted MCP Apps surface. Further screenshot, DOM and style inspections timed out, including a pre-dispatch deadline error. After the 0.2.2 install, the actual opener succeeded again, but the permitted registry returned no expanded app tabs before or after it. Final native appearance and interactions remain a separate check. No alternative native-window automation, app restart or new chat was performed.
+The Computer Use tool refused access to `com.openai.codex` with “Computer Use is not allowed to use the app 'com.openai.codex' for safety reasons.” The user subsequently expanded Hermes, allowing the permitted MCP Apps inspections above. Earlier screenshot, DOM and style inspections timed out, including a pre-dispatch deadline error. After the 0.2.2 install, the registry initially returned no expanded tabs, then later exposed the stale panel. Its native screenshot, image/font reads and Power menu check succeeded; the subsequent model-list navigation/read and recovery inspection timed out. Final 0.2.2 appearance and interactions require a refreshed host connection. No alternative native-window automation, app restart or new chat was performed.
 
 After refreshing the host connection, open Hermes from its global sidebar entry or the panel menu of an existing chat. Verify expandable profile sections and avatars, the composer Power/model selector, Hermes title/icon, Scheduled navigation and connection status under the instance name. Verify host theme inheritance and the archive control on an extension-owned test conversation. No prompt is needed to check rendering.
 

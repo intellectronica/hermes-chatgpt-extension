@@ -17,7 +17,7 @@ The extension provides a Codex-styled chat interface, profile sections and cron 
 
 Hermes owns the agent loop, tools, memory and scheduler. The bridge keeps upstream credentials server-side. Transcript data is returned in UI-only MCP metadata; model-facing tool results contain brief summaries.
 
-The native Codex backend has loaded the plugin, discovered its tools and read the exact built UI. A fresh 0.2.1 native panel snapshot showed the profile sections and default model control. Standalone rendering has been verified; final native visual and interaction acceptance remains incomplete. Subsequent inspections timed out, and after installing 0.2.2 the permitted surface has no expanded app tab. See [verification evidence and limitations](docs/verification.md).
+The native Codex backend has loaded the plugin, discovered its tools and read the exact built UI. A native screenshot and DOM check show the earlier profile-rail interface, loaded avatars, host fonts and the default model/Power menu. Standalone rendering of 0.2.2 is verified; final native acceptance remains incomplete because the current window holds an earlier connection and further panel inspections time out. See [verification evidence and limitations](docs/verification.md).
 
 ## Requirements
 

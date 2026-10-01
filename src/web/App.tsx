@@ -164,6 +164,7 @@ export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; emb
         <button className="icon-button mobile-menu" ref={openerRef} aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen(true)}><Icon name="menu" /></button>
         <div className="topbar-context"><span className="topbar-profile">{profileLabel || 'Hermes'}</span><span className="context-divider">/</span><span className="topbar-title">{state.tab === 'cron' ? 'Scheduled' : state.sessions.find((session) => session.id === state.sessionId)?.title || (state.sessionId ? 'Conversation' : 'New chat')}</span></div>
       </header>
+      <div className="archive-toast-anchor"><div className="archive-toasts">{Object.entries(state.archiveNotices).map(([key, notice]) => <ArchiveToast key={key} notice={notice} store={store} pending={Boolean(state.archivePending[key])} error={state.archiveErrors[key]} />)}</div></div>
       {!state.loading && !state.connections.length && <div className="panel-banner"><p>Add a connection in the bridge configuration, then reconnect.</p><Button color="secondary" variant="outline" size="sm" onClick={() => void store.reconnect()}>Reconnect</Button></div>}
       {state.error && <div className="panel-banner error" role="alert"><p>{state.error}</p><Button color="secondary" variant="outline" size="sm" onClick={() => void store.reconnect()}>Reconnect</Button></div>}
       {state.tab === 'chat' ? <>
@@ -178,7 +179,6 @@ export function HermesWorkspace({ api, embedded = false }: { api: HermesApi; emb
             disabled: !ready || state.chatLoading || pending || Boolean(uncertain || confirmation) || Boolean(chat?.questions.length) || chat?.status === 'streaming' || chat?.status === 'unknown' || chat?.status === 'connecting',
             onModel: (id) => void store.chooseModel(id), onReasoning: (effort) => void store.chooseReasoning(effort), onDefault: () => void store.useProfileDefault(), onReload: () => void store.loadModels() }} />
       </> : <Cron state={state} store={store} />}
-      <div className="archive-toasts">{Object.entries(state.archiveNotices).map(([key, notice]) => <ArchiveToast key={key} notice={notice} store={store} pending={Boolean(state.archivePending[key])} error={state.archiveErrors[key]} />)}</div>
     </main>
   </div>;
 }
