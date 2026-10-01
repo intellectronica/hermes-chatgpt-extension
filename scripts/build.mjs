@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Script } from 'node:vm';
 import { JSDOM } from 'jsdom';
+import { collectBundleLicenses } from './bundle-licenses.mjs';
 
 await mkdir('dist', { recursive: true });
 const result = await build({
@@ -17,6 +18,8 @@ const result = await build({
   conditions: ['browser', 'style', 'import'],
   target: ['chrome120'],
   minify: true,
+  metafile: true,
+  legalComments: 'external',
   define: { 'process.env.NODE_ENV': '"production"' },
   loader: { '.woff': 'dataurl', '.woff2': 'dataurl', '.ttf': 'dataurl', '.eot': 'dataurl', '.svg': 'dataurl' },
 });
@@ -35,15 +38,32 @@ const html = template
 const document = new JSDOM(html).window.document;
 if (document.scripts.length !== 1 || document.scripts[0].src) throw new Error('The UI must contain one self-contained script.');
 new Script(document.scripts[0].textContent ?? '', { filename: 'ui.html' });
-await writeFile('dist/ui.html', html);
-await build({
+const server = await build({
   entryPoints: ['src/bridge/main.ts'],
   bundle: true,
+  write: false,
   outfile: 'dist/server.cjs',
   format: 'cjs',
   platform: 'node',
   target: 'node22',
   sourcemap: false,
   minify: false,
+  metafile: true,
+  legalComments: 'external',
 });
-process.stdout.write(`Built the bridge and single-file UI (${Math.round(Buffer.byteLength(html) / 1024)} KiB).\n`);
+const bridge = server.outputFiles.find(file => file.path.endsWith('server.cjs'))?.text;
+if (!bridge) throw new Error('The bridge build did not produce JavaScript.');
+const legalComments = output => output.outputFiles.filter(file => file.path.endsWith('.LEGAL.txt')).map(file => file.text).join('\n');
+const licenses = await collectBundleLicenses({
+  bundles: [
+    { name: 'UI', metafile: result.metafile, legalComments: legalComments(result) },
+    { name: 'server', metafile: server.metafile, legalComments: legalComments(server) },
+  ],
+  css: compiled.css,
+});
+// Write distributable bundles only after every contributing dependency has a
+// complete notice. Metafiles stay in memory, so they expose no local build paths.
+await writeFile('dist/THIRD_PARTY_LICENSES.txt', licenses.text);
+await writeFile('dist/ui.html', html);
+await writeFile('dist/server.cjs', bridge);
+process.stdout.write(`Built the bridge and single-file UI (${Math.round(Buffer.byteLength(html) / 1024)} KiB); preserved ${licenses.packageCount} dependency notices and ${licenses.referencedFontCount} external font references.\n`);

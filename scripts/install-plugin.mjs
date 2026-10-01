@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -8,7 +9,9 @@ import { inspectPackage } from './verify-plugin.mjs';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const markerName = '.hermes-plugin-install.json';
-const packageFiles = ['plugin.json', 'mcp.json', 'dist/server.cjs', 'dist/ui.html'];
+const packageFiles = ['plugin.json', 'mcp.json', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+  'dist/server.cjs', 'dist/ui.html', 'dist/THIRD_PARTY_LICENSES.txt'];
+const exampleFiles = ['config.local.json', 'config.ssh.json', 'config.ssh-attach.json', 'config.http.json', 'config.multiple.json'];
 
 async function statOrMissing(file) {
   try { return await lstat(file); }
@@ -96,10 +99,15 @@ export async function planInstallation({ root = packageRoot, home = os.homedir()
     assert.ok(configStat.isFile() && !configStat.isSymbolicLink(), '--config must refer to an existing regular file.');
     mcp.mcpServers.hermes.args = ['${PLUGIN_ROOT}/dist/server.cjs', '--stdio', '--config', config];
   }
-  const notices = await statOrMissing(path.join(root, 'THIRD_PARTY_NOTICES.md'));
+  const readme = await statOrMissing(path.join(root, 'README.md'));
   const assets = await statOrMissing(path.join(root, 'assets'));
-  const files = [...packageFiles, ...(notices ? ['THIRD_PARTY_NOTICES.md'] : []),
-    ...(assets ? await collectFiles(root, 'assets') : []), ...await collectFiles(root, 'skills/hermes')];
+  const examples = [];
+  for (const name of exampleFiles) {
+    const relative = `examples/${name}`;
+    if (await statOrMissing(path.join(root, relative))) examples.push(relative);
+  }
+  const files = [...packageFiles, ...(readme ? ['README.md'] : []),
+    ...examples, ...(assets ? await collectFiles(root, 'assets') : []), ...await collectFiles(root, 'skills/hermes')];
   const snapshots = [];
   for (const relative of files) {
     const stat = await lstat(path.join(root, relative));
@@ -208,6 +216,7 @@ async function main() {
   console.log(`Copy ${plan.snapshots.length} compiled package files to ${plan.destination}`);
   if (plan.config) console.log(`Reference existing configuration: ${plan.config}`);
   console.log(`Merge marketplace ${plan.marketplacePath}, preserving ${plan.preservedEntries} existing entries.`);
+  console.log(`Marketplace name: ${plan.marketplaceName}`);
   if (!options.apply) {
     console.log('Dry-run complete; no files or host settings changed. Pass --apply to install the files.');
     return;
@@ -222,7 +231,12 @@ async function main() {
   console.log('After installation, open Hermes from the sidebar or existing chat panel. Embedded rendering remains a host acceptance check.');
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+function isEntrypoint() {
+  try { return process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href; }
+  catch { return false; }
+}
+
+if (isEntrypoint()) {
   main().catch((error) => {
     console.error(`Plugin installation stopped: ${error.message}`);
     process.exitCode = 1;

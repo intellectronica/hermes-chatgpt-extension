@@ -10,28 +10,30 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      HERMES_LIVE_SSH_TEST: '0'
+      HERMES_NATIVE_LIVE_TEST: '0'
+    strategy:
+      matrix:
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run check
       - run: npm test
       - run: npm run build
       - run: npm run plugin:verify
+      - run: npm run release:package
+      - run: npm run release:verify
       - run: npm audit --omit=dev
       - uses: actions/upload-artifact@v4
         with:
-          name: hermes-extension-build
+          name: hermes-extension-node-${{ matrix.node }}
           path: |
-            dist/
-            assets/
-            plugin.json
-            mcp.json
-            skills/
-            README.md
-            THIRD_PARTY_NOTICES.md
-            examples/
+            release/*.zip
+            release/SHA256SUMS
           retention-days: 14

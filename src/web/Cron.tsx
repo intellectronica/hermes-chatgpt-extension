@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Button } from '@openai/apps-sdk-ui/components/Button';
 import type { WorkspaceState, WorkspaceStore } from './store';
-import { DISPLAY_TIMEZONE, formatInstant, statusLabel } from './format';
+import { displayTimezone, formatInstant, statusLabel } from './format';
 import { Icon } from './icons';
 
 function Status({ value }: { value?: string }) {
@@ -12,9 +12,10 @@ export function Cron({ state, store }: { state: WorkspaceState; store: Workspace
   const detail = useRef<HTMLElement>(null);
   useEffect(() => { detail.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [state.selectedJob?.id, state.selectedJob?.profile]);
   const job = state.selectedJob;
+  const timezone = displayTimezone();
   return <section className="cron-area" aria-label="Scheduled">
     <div className="cron-heading">
-      <div><h1>Scheduled</h1><p>Schedules and run history. Times shown in {DISPLAY_TIMEZONE}.</p></div>
+      <div><h1>Scheduled</h1><p>Schedules and run history. Times shown in {timezone}.</p></div>
       <div className="cron-controls">
         <label className="cron-filter">Show
           <select value={state.allProfiles ? 'all' : 'selected'} onChange={(event) => store.setAllProfiles(event.target.value === 'all')} aria-label="Scheduled profile filter">
@@ -48,7 +49,7 @@ export function Cron({ state, store }: { state: WorkspaceState; store: Workspace
         <dt>Schedule</dt><dd>{job.schedule}</dd>
         <dt>Timezone</dt><dd>{job.timezone ?? 'Unknown'}</dd>
         <dt>State</dt><dd>{job.enabled ? 'Enabled' : 'Paused'}</dd>
-        <dt>Next run</dt><dd><time dateTime={job.nextRunAt} title={job.nextRunAt}>{formatInstant(job.nextRunAt, true)}</time> ({DISPLAY_TIMEZONE})</dd>
+        <dt>Next run</dt><dd><time dateTime={job.nextRunAt} title={job.nextRunAt}>{formatInstant(job.nextRunAt, true)}</time> ({timezone})</dd>
         <dt>Execution</dt><dd>{statusLabel(job.lastStatus)}</dd>
         <dt>Delivery</dt><dd>{statusLabel(job.deliveryStatus)}</dd>
       </dl>

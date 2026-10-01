@@ -1,76 +1,43 @@
-# Native interface verification
+# Verification
 
-Current release **0.2.3** corrects the composer differences in the user's side-by-side Codex screenshot. It right-aligns model/effort beside Send, matches the native placeholder and disabled-send opacity, and enlarges the send arrow to 20px while preserving the matching composer geometry. See [composer comparison, rendered checks and installed resource evidence](verification-composer.md). The evidence below records the earlier 0.2.2 refinement and its native inspection limits.
+Run from a source checkout with Node.js 22 or newer:
 
-Version **0.2.2** refines the native-style interface and conversation model controls introduced in 0.2.1. It uses the Hermes app title, Nous girl app icon, shorter welcome copy, connection status beneath the instance name and Scheduled navigation. Tagged automated chats are hidden by default, and conversations can be archived with Codex's sidebar control and Undo. The native styling source is recorded in [the Codex reference](native-ui-reference.md); Hermes API and actual UI settings evidence is recorded in [model/avatar verification](verification-hermes-native.md) and [sidebar/archive verification](verification-sidebar-archive.md).
+```sh
+npm ci
+npm run check
+npm test
+npm run build
+npm run plugin:verify
+npm run release:package
+npm run release:verify
+```
 
-| Requirement | Evidence | Status |
-| --- | --- | --- |
-| Native Codex appearance | Installed desktop source and browser render: 275px rail, 768px column, 736px composer, 22px composer corners and host-token mapping; native screenshot/DOM shows the earlier profile rail, loaded avatars, host fonts and default model/Power menu | Current source/browser verified; final 0.2.2 native acceptance incomplete |
-| Expandable profile sections and owned chats | Real profile sections; independently cached children; selected older chat stays visible with compact recent list; profile/draft/race checks | Implemented and browser/test verified |
-| Hermes profile avatars | Six real avatars from `profiles.get_asset`, bounded raster validation and server-side fetching; all six render at 16px, including the earlier native panel | Live API/browser/native baseline verified |
-| Profile default and available models | Six configured catalogues with 149–151 choices each; every profile default present | Live API verified |
-| Model and reasoning selection | Conversation-scoped `config.set`; native-style Power/menu; actual UI radio/keyboard changes and cancel/confirm/reset with backend read-back, no inference | Adapter, live and browser checks pass |
-| Profile/default isolation | Complete owner routing; all saved profile config/environment/active-profile hashes unchanged after live settings test | Bridge, adapter and live checks pass |
-| Native host package | v0.2.2 installed/enabled; 14 tools, Hermes title and two theme icons, global/thread entrypoints, app-only model and archive controls, exact version-and-hash UI resource read through bundled Codex app-server | Verified; current window refresh remains separate |
-| Sidebar filtering and archive | Source exclusions before the list limit, creation-provenance and archived-row checks, configuration toggle, owner-scoped archive acknowledgements and Undo | Adapter/store/component tests and live Hermes archive/restore pass |
+The ordinary suite uses synthetic fixtures for HTTP/WebSocket authentication, connection and profile isolation, session ownership, model/effort confirmation, reconnect ambiguity, safe presentation, archive/restore, filtering and UI interactions. It does not connect to a real Hermes instance. Installer tests use temporary homes and check configuration privacy, marketplace preservation, symlink rejection, concurrent changes and recoverable replacement.
 
-Current 0.2.2 checks pass: TypeScript, **81 Vitest checks**, **nine installer checks**, the self-contained build and the 14-tool MCP package/native resource probes. Two opt-in live tests are skipped in the ordinary suite. The separate sidebar/archive run verified six real profiles and reversible archive/restore of the extension-owned echo chat, preserving its transcript and all saved configuration. The native package's exact assets and resource URI are recorded in [plugin verification](verification-plugin.md).
+The build parses the final inline UI script and exports dependency licence notices. Plugin verification initialises the compiled MCP server and reads tools/resources without executing a Hermes action. Release verification extracts the ZIP into a fresh path with spaces, installs into an isolated home, checks that private config is referenced without being copied, and probes the installed server without a source checkout or node_modules.
 
-GitHub CI passed for the refinements and final notification-placement correction at `9d0aa926a3b52839a36dc5efe5d132dd89f3d019`: [run 36867186484](https://github.com/intellectronica/hermes-chatgpt-extension/actions/runs/36867186484). It includes TypeScript, the full test suite, build/package checks, production dependency audit and uploaded compiled artefacts.
+## Optional live compatibility tests
 
-Current standalone browser acceptance covers 1440×900 and 390×844 in light/dark themes. It verifies the shorter welcome text, Scheduled navigation/heading/filter, and Connected under Fnordistan at 12px with a 6px dot. The real Scheduled view returned 11 jobs for the selected profile. No horizontal overflow or page errors occurred. The narrow navigation drawer's axe scan reported zero violations and zero incomplete checks.
+Live tests are skipped unless explicitly enabled. Configure a disposable or authorised target using HERMES_LIVE_SSH_HOST, HERMES_LIVE_REPO, HERMES_LIVE_PYTHON and HERMES_LIVE_HOME; HERMES_LIVE_SSH_USER is optional when an SSH alias or local username supplies it. There are no default hosts or private paths.
 
-A separate static fixture with no Hermes connection verifies the archive control on hover and keyboard focus, acknowledgement-before-removal, same-owner keyboard Undo, narrow success/error behaviour and the source-derived row/control/notification geometry. The notification uses a zero-height anchor below the actual header: wide header 52px → toast top 60px, narrow header 62px → toast top 70px. Light/dark wide/narrow checks show no breadcrumb overlap or overflow. Narrow keyboard Archive closes the drawer after acknowledgement, restores navigation focus and makes Undo reachable by Tab; Enter restores the exact owner. Failed acknowledgement retains the drawer, row and visible error. The final notification axe scan reports zero violations and one incomplete contrast check involving only the SDK Undo button's pseudo-element; that contrast result remains unverified. Screenshots are retained as `hermes-0.2.2-refinements-*` and `hermes-0.2.2-archive-corrected-*` in the task's `outputs` directory. Owned browser sessions, fixture servers and the owned live HTTP server were closed. These checks made no personal-chat, model-setting or scheduled-job mutations.
+HERMES_LIVE_SSH_TEST=1 enables metadata reads through an owned managed backend. HERMES_NATIVE_LIVE_TEST=1 additionally creates an empty test conversation and changes its model/reasoning settings. Neither test submits inference or runs scheduled jobs. The latter leaves the empty conversation in the selected profile; use an isolated target when that matters. Both close their owned backends and require existing dependencies.
 
-## Native-interface baseline (0.2.1)
+## UI and compatibility acceptance
 
-TypeScript, **66 Vitest checks**, nine guarded installer checks, the self-contained build, the MCP package probe and production dependency audit pass. The two opt-in live checks are skipped in the ordinary suite; the new settings/avatar check passed separately against Fnordistan. Model controls, defaults, profile ownership, race rejection, ambiguity, missing read-back, confirmation and reconnect/restart distinctions are covered. GitHub CI passed for implementation commit `a91b82d903155d15ff37307e8aab71050b17fc10`: [run 36854804124](https://github.com/intellectronica/hermes-chatgpt-extension/actions/runs/36854804124), including the uploaded build artefact.
+For UI changes, inspect light/dark views at wide and narrow sizes, keyboard navigation, focus restoration, errors and empty states. A browser preview cannot establish native host rendering. The MCP resource URI contains the project version and content hash to avoid stale templates; the desktop host may still require its documented plugin refresh flow.
 
-Final standalone browser acceptance covered light/dark chat, Power/model menus, expanded/compact sections, selected older chats, per-profile A→B→A drafts and local model/effort choices, the mobile focus trap/Escape and read-only Cron. At 1440×900 the rail is 275px, transcript column 768px and visible composer 736×98px with 22px corners; at 390×844 the composer is 358px, navigation is a drawer and the 254px model popup stays in bounds. Navigation rows are 30px, the rail header is 32px, toolbar padding is 16px and the composer footer gap is 4px. All six real profile images loaded at 16px. The composer and page fit both viewports; page errors and final drafts were empty.
+HTTP integration requires Hermes's desktop backend endpoints and compatible JSON-RPC methods. A plain messaging gateway or OpenAI-compatible completion endpoint does not supply these contracts. Feature availability also depends on the chosen Hermes revision, profile configuration and provider. Test against each supported upstream revision before claiming broader compatibility.
 
-The shipped 0.2.1 picker was reloaded after its last CSS correction and inspected without injected styles: its border is zero and its shadow ring is 0.5px. Opening the menu preserves the trigger's exact bounds and keeps the popup centred. ArrowUp moves focus from Power to Select model without changing effort; Enter dismisses the picker and restores the trigger's focus. No message or settings change was submitted in this final rendering check.
+CI runs type checking, ordinary tests, build, plugin verification, production dependency audit and fresh-user release verification. Release archives include complete licences and an integrity manifest, while excluding Git history, configuration, environment files and local development artefacts.
 
-Axe reported zero violations. Chat, mobile navigation and Cron had zero incomplete checks. Popup checks retained an SDK dynamic `aria-controls` finding whose referenced menu ID was present; the model list also had partly clipped colour-contrast findings. Manual inspection confirmed opaque `#0d0d0d` and `#5d5d5d` model text on white, matching the passing visible rows. The keyboard-focusable model scroll group, actual Left/Right effort adjustment and Enter dismissal were checked. Screenshots of light/dark chat, Power, model list, mobile profiles/chat/model list and Cron/run history are retained in the task's `outputs` directory.
+## Release 0.3.0 acceptance
 
-Live Cron reads returned 11 default-profile jobs and 55 jobs across all six profiles. Opening factoryfnord's kanban-label-sync from the default profile returned 20 correctly owned run records. Europe/Zurich display timezone and missing schedule/delivery evidence remain distinct. No mutation or run-now control is exposed.
+Local type checking, 101 Vitest checks, 34 Node checks, build, plugin verification and fresh-user release verification passed. The two real-Hermes suites remained explicitly disabled. Production dependency audit reported no known vulnerabilities at the time of this check.
 
-# First-version verification (historical)
+Both the 21-file plugin ZIP and 81-file source ZIP installed in fresh, isolated homes using only Node and initialised the compiled MCP server with 14 tools and its UI resource. Private configuration was referenced without being copied; the source manifest was preserved. The source archive includes complete code and tests with no prior Git history. Checksums and per-file manifests are generated with each package.
 
-This records observed results, with native rendering separated from backend loading. Detailed evidence is in [Hermes verification](verification-hermes.md) and [plugin verification](verification-plugin.md).
+Synthetic managed-supervisor checks covered existing venv/.venv and explicit interpreter paths, missing server-dependency refusal before Hermes startup, and owned-child cleanup. Fixture integration verified colliding session IDs on separate instances retain their owners for model and archive actions. Neither check accessed a real SSH host or Hermes installation.
 
-## Repository and package
+Standalone browser checks at 1440×900 and 390×844 in light/dark themes verified the viewer-time-zone label and the distinct job schedule zone, with no page overflow or page errors. These fixture renders do not establish a native host embedding or live backend compatibility claim.
 
-- GitHub repository: `intellectronica/hermes-chatgpt-extension`, private, HTTPS remote.
-- Portable `plugin.json`, typed stdio `mcp.json`, local marketplace and bundled Hermes skill.
-- A self-contained Node bridge and single-file React HTML resource. Build parses the final HTML and checks the actual inline script's syntax.
-- Guarded installer preserves the personal marketplace and previous managed packages, and references an ignored configuration file without copying it.
-
-## Observed checks
-
-- TypeScript, 40 Vitest checks and 9 installer checks pass locally. They cover bridge/config/HTTP/MCP, adapter protocol and frontend ownership/race/controls. The opt-in live SSH test passed separately on the final adapter (16.59 seconds).
-- Production dependency audit: no reported vulnerabilities after the patched Lodash override.
-- Live managed SSH: authenticated REST/WebSocket, profiles, saved-conversation metadata, profile/all-profile cron and run metadata succeeded against Fnordistan. Teardown removed the temporary backend; existing services remained active.
-- Native desktop-bundled Codex backend: plugin installed/enabled, 11 tools discovered, global/thread UI entrypoints and the exact built HTML resource loaded.
-- Browser UI displays the real connection, six profiles, 55 jobs across all profiles, cross-profile run history and the controlled echo conversation. The live echo streamed to an idle completion with the expected reply and no tool calls.
-- Browser light/dark layouts at 1440×900 and 390×844 fit their viewports; the composer stays visible. The mobile drawer traps focus, closes with Escape and restores the opener's focus. The final narrow transcript accessibility scan reports zero violations and zero incomplete checks (35 passed). Browser page errors are empty.
-- GitHub CI passed for implementation commit `55d7735220ba3a04f34274eaf2d6e1976566dcbd`: [run 36756732851](https://github.com/intellectronica/hermes-chatgpt-extension/actions/runs/36756732851). The workflow runs on every subsequent push and retains the compiled plugin as an artefact.
-
-## Native GUI acceptance limitation
-
-Computer-use access to `com.openai.codex` was denied by the tool. The permitted MCP Apps surface initially showed v0.1's profile dropdown and Chats navigation from an older running connection. A later fresh native DOM snapshot showed the new profile navigation, six profile sections, New chat and Cron jobs, a connected Fnordistan instance, and the composer control “Model and reasoning: muse-spark-1.3-contributor, Max”. This establishes that the new interface rendered inside Codex.
-
-Further permitted screenshot, DOM and style inspection calls timed out, including a command-dispatch deadline error. The panel continued to appear in the MCP Apps registry. Its loaded avatars, expanded conversation lists, model-menu interaction and final visual match remain unverified inside the host. Standalone browser evidence remains separate. No alternative native-window automation, app restart or new chat was used.
-
-After installing 0.2.2, the actual `open_hermes` call succeeded again; the registry initially returned no expanded tabs. A later registry check exposed a panel. Its screenshot and DOM still show the earlier profile-rail build: Cron jobs, Remote Hermes, the longer welcome copy and automated conversation rows. Read-only DOM checks verify all nine rendered images loaded at 256×256, host typography of Geist/Inter/system, 14px base and weight 430, and an 842×1002 viewport with a 240px rail and 602px main pane. Opening the default model/Power menu succeeded and showed Max at position 7 of 8. A subsequent model-list navigation/read and recovery inspection timed out. No model, effort, prompt or profile setting was changed. The exact 0.2.2 native appearance and interactions still require a refreshed host connection.
-
-Use [Hermes](codex://plugins/hermes-chatgpt-extension%40personal/app/open_hermes), or **Explore → Hermes**. Hover the Explore entry and choose **Pin to sidebar** to keep it there; the older text sidebar uses **Explore → Customize**. The installed plugin is enabled. If the host still holds an older connection, follow its local plugin refresh/restart flow. The install and exact resource evidence are recorded in [plugin verification](verification-plugin.md).
-
-## Practical limits
-
-- Cron controls are read-only. Delivery and scheduler health remain unknown when the backend provides no evidence.
-- Streaming is an event-driven Hermes transcript exposed through bounded MCP/HTTP snapshot polling.
-- A client reconnect can recover a live turn, questions and runtime model selection. A backend restart preserves saved history, with no guarantee for in-flight work. Its lazy resume can fall back to profile model defaults; the UI shows the returned selection and does not automatically reapply an earlier override. Prompts are never automatically resent.
-- Resumes use watch-only lazy mode, preventing automatic continuation of interrupted sessions.
-- History and tool outputs are bounded. Attachments and Desktop-specific vault/sudo/secret peers are unsupported and fail explicitly.
-- Hosted ChatGPT distribution and remote HTTPS MCP deployment are future work; this release uses local Codex stdio and a private SSH/HTTP connector.
+CI independently repeats the checks on Node.js 22 and 24 and uploads the two allowlisted archives and SHA256SUMS. See the [workflow results](https://github.com/intellectronica/hermes-chatgpt-extension/actions/workflows/ci.yml) for the exact pushed commit.

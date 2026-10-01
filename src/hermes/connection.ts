@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type { ConnectionConfig, ConnectionSummary } from '../shared/types.js';
 import { HermesTransportError } from './rpc.js';
+import { backendBaseUrl, backendRoute } from './urls.js';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 const MAX_HTTP_BYTES = 8 * 1024 * 1024;
@@ -18,16 +19,33 @@ const MAX_HTTP_BYTES = 8 * 1024 * 1024;
 export const MANAGED_SUPERVISOR = String.raw`
 import json, os, signal, subprocess, sys, threading
 payload = json.loads(sys.stdin.readline())
-home = os.path.expanduser(payload.get('hermesHome') or '~/.hermes')
-repo = os.path.expanduser(payload.get('repoPath') or '~/.hermes/hermes-agent')
-python = os.path.expanduser(payload.get('pythonPath') or repo + '/venv/bin/python')
+home = os.path.abspath(os.path.expanduser(payload.get('hermesHome') or '~/.hermes'))
+repo = os.path.abspath(os.path.expanduser(payload.get('repoPath') or os.path.join(home, 'hermes-agent')))
+if payload.get('pythonPath'):
+    python = os.path.expanduser(payload['pythonPath'])
+else:
+    python = next((p for p in [os.path.join(repo, 'venv/bin/python'), os.path.join(repo, '.venv/bin/python')] if os.path.isfile(p) and os.access(p, os.X_OK)), None)
+if not os.path.isdir(repo) or not python or not os.path.isfile(python) or not os.access(python, os.X_OK):
+    sys.exit('Configure an existing Hermes repository and runtime pythonPath; this connector does not prepare environments.')
 env = os.environ.copy()
 env['HERMES_HOME'] = home
 env['HERMES_DASHBOARD_SESSION_TOKEN'] = payload['token']
 env['HERMES_DASHBOARD_PUBLIC_URL'] = 'http://127.0.0.1'
 env.pop('HERMES_DESKTOP', None)
 env['HERMES_PARENT_PID'] = str(os.getpid())
-child = subprocess.Popen([python, '-m', 'hermes_cli.main', '-p', 'default', 'serve', '--isolated', '--host', '127.0.0.1', '--port', '0'], cwd=repo, env=env, start_new_session=True)
+# Official launch policy skips source-update dependency sync. Activate only an existing
+# runtime, then require web dependencies BEFORE importing the web server's lazy installer.
+env['HERMES_DISABLE_LAZY_INSTALLS'] = '1'
+entrypoint = """import importlib.util, runpy
+if importlib.util.find_spec('hermes_bootstrap') is not None:
+    import hermes_bootstrap
+try:
+    import fastapi, uvicorn, multipart
+except ImportError:
+    raise SystemExit('Prepare Hermes server dependencies separately before connecting.')
+runpy.run_module('hermes_cli.main', run_name='__main__', alter_sys=True)
+"""
+child = subprocess.Popen([python, '-c', entrypoint, '-p', 'default', 'serve', '--isolated', '--host', '127.0.0.1', '--port', '0'], cwd=repo, env=env, start_new_session=True)
 lock = threading.Lock()
 def stop(*_):
     with lock:
@@ -64,9 +82,9 @@ function sshArgs(config: ConnectionConfig): string[] {
   if (!ssh || !/^[A-Za-z0-9_.:[\]-]+$/.test(ssh.host) || ssh.host.startsWith('-')) {
     throw new HermesTransportError('A valid SSH host is required.');
   }
-  if (ssh.user && !/^[A-Za-z0-9_.-]+$/.test(ssh.user)) throw new HermesTransportError('Invalid SSH user.');
+  if (ssh.user && (!/^[A-Za-z0-9_.-]+$/.test(ssh.user) || ssh.user.startsWith('-'))) throw new HermesTransportError('Invalid SSH user.');
   const args = ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3'];
-  if (ssh.port) {
+  if (ssh.port !== undefined) {
     if (!Number.isInteger(ssh.port) || ssh.port < 1 || ssh.port > 65535) throw new HermesTransportError('Invalid SSH port.');
     args.push('-p', String(ssh.port));
   }
@@ -101,12 +119,15 @@ async function portReady(port: number): Promise<boolean> {
 }
 
 async function tokenFromConfig(config: ConnectionConfig): Promise<string> {
+  if (Boolean(config.tokenEnv) === Boolean(config.tokenFile)) throw new HermesTransportError('Attached backends need exactly one Hermes token environment variable or private token file.');
   if (config.tokenEnv) {
     const token = process.env[config.tokenEnv]?.trim();
     if (!token) throw new HermesTransportError('The configured Hermes credential environment variable is empty.');
+    if (token.length > 16_384 || /[\x00-\x1f\x7f]/.test(token)) throw new HermesTransportError('The configured Hermes credential is invalid.');
     return token;
   }
   if (config.tokenFile) {
+    if (config.tokenFile.startsWith('~') && !config.tokenFile.startsWith('~/')) throw new HermesTransportError('Use an absolute tokenFile path or ~/ for the current user’s home directory.');
     const path = config.tokenFile.startsWith('~/') ? resolve(homedir(), config.tokenFile.slice(2)) : resolve(config.tokenFile);
     const info = await stat(path);
     if (!info.isFile() || info.size > 16_384 || (process.platform !== 'win32' && ((info.mode & 0o077) !== 0 || typeof process.getuid === 'function' && info.uid !== process.getuid()))) {
@@ -114,6 +135,7 @@ async function tokenFromConfig(config: ConnectionConfig): Promise<string> {
     }
     const token = (await readFile(path, 'utf8')).trim();
     if (!token) throw new HermesTransportError('The configured Hermes token file is empty.');
+    if (token.length > 16_384 || /[\x00-\x1f\x7f]/.test(token)) throw new HermesTransportError('The configured Hermes credential is invalid.');
     return token;
   }
   throw new HermesTransportError('Configure a Hermes token environment variable or private token file for an attached backend.');
@@ -154,28 +176,35 @@ export class HermesConnection {
     this.error = undefined;
     try {
       if (this.config.kind === 'http') {
-        const url = new URL(this.config.baseUrl ?? 'http://127.0.0.1:9119');
-        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new HermesTransportError('Invalid Hermes backend URL.');
-        if (url.protocol === 'http:' && !LOOPBACK_HOSTS.has(url.hostname)) throw new HermesTransportError('Use HTTPS for a non-loopback Hermes backend.');
+        if (this.config.ssh) throw new HermesTransportError('HTTP connections cannot include SSH settings.');
+        let endpoint: string;
+        try { endpoint = backendBaseUrl(this.config.baseUrl); }
+        catch (error) { throw new HermesTransportError((error as Error).message); }
         this.token = await tokenFromConfig(this.config);
-        this.endpoint = url.href.replace(/\/$/, '');
+        this.endpoint = endpoint;
       } else {
         const ssh = this.config.ssh;
         if (!ssh) throw new HermesTransportError('SSH connection configuration is missing.');
+        if (ssh.mode !== undefined && ssh.mode !== 'attach' && ssh.mode !== 'managed') throw new HermesTransportError('SSH mode must be attach or managed.');
+        if (this.config.baseUrl) throw new HermesTransportError('SSH connections cannot include baseUrl.');
+        if (Object.hasOwn(ssh, 'rendezvousDir')) throw new HermesTransportError('SSH rendezvousDir is not supported. Each managed connection owns its backend.');
+        if (ssh.mode !== 'attach' && (ssh.remoteHost !== undefined || ssh.remotePort !== undefined || this.config.tokenEnv !== undefined || this.config.tokenFile !== undefined)) throw new HermesTransportError('Managed SSH cannot include attach listener or token settings.');
+        if (ssh.mode === 'attach' && (ssh.hermesHome !== undefined || ssh.repoPath !== undefined || ssh.pythonPath !== undefined)) throw new HermesTransportError('SSH attach mode cannot include managed runtime paths.');
         const remoteHost = ssh.remoteHost ?? '127.0.0.1';
         if (!LOOPBACK_HOSTS.has(remoteHost)) throw new HermesTransportError('The remote Hermes listener must be on loopback.');
-        let remotePort = ssh.remotePort ?? 9119;
+        await this.stopChildren();
+        let remotePort = ssh.remotePort;
         if (ssh.mode !== 'attach') {
-          await this.stopChildren();
           this.token = randomBytes(32).toString('base64url');
           remotePort = await this.startManaged();
         } else this.token = await tokenFromConfig(this.config);
-        if (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535) throw new HermesTransportError('Invalid remote Hermes port.');
+        if (remotePort === undefined || !Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535) throw new HermesTransportError('SSH attach mode needs an explicit valid remotePort.');
         const port = await reservePort();
         const args = [...sshArgs(this.config), '-N', '-o', 'ExitOnForwardFailure=yes', '-L', `127.0.0.1:${port}:${remoteHost === '::1' ? '[::1]' : remoteHost}:${remotePort}`, destination(this.config)];
         const tunnel = spawn('ssh', args, { stdio: 'pipe' });
         this.tunnel = tunnel;
         // Drain diagnostics without forwarding credentials or command text to UI/logs.
+        tunnel.stdin.on('error', () => {});
         tunnel.stderr.on('data', () => {});
         tunnel.stdout.on('data', () => {});
         let failed = false;
@@ -204,7 +233,6 @@ export class HermesConnection {
     const supervisor = spawn('ssh', args, { stdio: 'pipe' });
     this.supervisor = supervisor;
     const ssh = this.config.ssh!;
-    supervisor.stdin.write(`${JSON.stringify({ token: this.token, hermesHome: ssh.hermesHome, repoPath: ssh.repoPath, pythonPath: ssh.pythonPath })}\n`);
     supervisor.stderr.on('data', () => {});
     return new Promise<number>((resolvePort, reject) => {
       let buffer = '';
@@ -213,10 +241,11 @@ export class HermesConnection {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        reject(new HermesTransportError('The private remote Hermes backend did not start. Check the configured repository and interpreter paths.'));
+        reject(new HermesTransportError('The private remote Hermes backend did not start. Check remote python3, repository and interpreter paths, and prepared server dependencies.'));
       };
       const timeout = setTimeout(fail, 90_000);
       timeout.unref();
+      supervisor.stdin.once('error', fail);
       supervisor.once('error', fail);
       supervisor.once('exit', () => { if (this.supervisor === supervisor) { this.endpoint = undefined; this.state = 'disconnected'; } fail(); });
       supervisor.stdout.on('data', data => {
@@ -227,12 +256,13 @@ export class HermesConnection {
         clearTimeout(timeout);
         resolvePort(Number(match[1]));
       });
+      supervisor.stdin.write(`${JSON.stringify({ token: this.token, hermesHome: ssh.hermesHome, repoPath: ssh.repoPath, pythonPath: ssh.pythonPath })}\n`);
     });
   }
 
   wsUrl(): string {
     if (!this.endpoint) throw new HermesTransportError('Hermes is not connected.');
-    const url = new URL(`${this.endpoint}/api/ws`);
+    const url = backendRoute(this.endpoint, '/api/ws');
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('token', this.token);
     return url.href;
@@ -241,10 +271,12 @@ export class HermesConnection {
   async get(path: string): Promise<unknown> {
     await this.start();
     // Callers choose from fixed read-only routes; a path can never retarget credentials.
-    if (!path.startsWith('/api/') || path.includes('://') || path.includes('\\')) throw new HermesTransportError('Unsupported Hermes read route.');
+    let url: URL;
+    try { url = backendRoute(this.endpoint!, path); }
+    catch { throw new HermesTransportError('Unsupported Hermes read route.'); }
     let response: Response;
     try {
-      response = await fetch(`${this.endpoint}${path}`, {
+      response = await fetch(url, {
         headers: { 'X-Hermes-Session-Token': this.token, Authorization: `Bearer ${this.token}` },
         redirect: 'error', signal: AbortSignal.timeout(60_000),
       });

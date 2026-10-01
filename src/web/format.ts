@@ -1,11 +1,13 @@
-export const DISPLAY_TIMEZONE = 'Europe/Zurich';
+export function displayTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
 
 export function formatInstant(instant?: string, long = false): string {
   if (!instant) return 'Unknown';
   const date = new Date(instant);
   if (Number.isNaN(date.getTime())) return 'Unknown';
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: DISPLAY_TIMEZONE,
+    timeZone: displayTimezone(),
     day: '2-digit', month: 'short', ...(long ? { year: 'numeric' } : {}),
     hour: '2-digit', minute: '2-digit',
   }).format(date);

@@ -14,7 +14,7 @@ describe('portable embedded MCP app', () => {
     try {
       const list = await client.listTools();
       const uri = (list.tools.find(tool => tool.name === 'open_hermes')?._meta?.ui as { resourceUri: string }).resourceUri;
-      expect(uri).toMatch(/^ui:\/\/hermes\/v0\.2\.3\/app-[a-f0-9]{16}\.html$/);
+      expect(uri).toMatch(/^ui:\/\/hermes\/v0\.3\.0\/app-[a-f0-9]{16}\.html$/);
       expect(list.tools.find(tool => tool.name === 'open_hermes')?.title).toBe('Hermes');
       expect(client.getServerVersion()).toMatchObject({ title: 'Hermes', icons: [
         { src: expect.stringMatching(/^data:image\/png;base64,/), mimeType: 'image/png', sizes: ['256x256'], theme: 'light' },

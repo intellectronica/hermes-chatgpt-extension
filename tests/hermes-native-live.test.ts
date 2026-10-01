@@ -3,15 +3,14 @@ import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { createHermesService } from '../src/hermes/service.js';
+import { liveSshConfig } from './helpers/live-config';
 
 const execute = promisify(execFile);
-const host = process.env.HERMES_LIVE_SSH_HOST ?? 'fnordistan';
-const user = process.env.HERMES_LIVE_SSH_USER ?? 'fnord';
-const home = process.env.HERMES_LIVE_HOME ?? '/home/fnord/.hermes';
-const destination = `${user}@${host}`;
 const quote = (value: string): string => `'${value.replaceAll("'", "'\"'\"'")}'`;
 
-async function configurationHashes(): Promise<string> {
+async function configurationHashes(settings: ReturnType<typeof liveSshConfig>): Promise<string> {
+  const home = settings.hermesHome;
+  const destination = `${settings.user ? `${settings.user}@` : ''}${settings.host}`;
   // Hashes only: never return configuration or credential values to the test runner.
   const source = `from pathlib import Path\nimport hashlib,json\nhome=Path(${JSON.stringify(home)})\nroots=[home,*sorted((home/'profiles').iterdir())]\nfiles=[p/n for p in roots if p.is_dir() for n in ['config.yaml','profile.yaml','.env']]\nfiles.append(home/'active_profile')\nprint(json.dumps({str(p.relative_to(home)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files if p.is_file()},sort_keys=True))`;
   const result = await execute('ssh', ['-T', '-o', 'BatchMode=yes', destination, `python3 -c ${quote(source)}`], { timeout: 20_000, maxBuffer: 64_000 });
@@ -23,13 +22,10 @@ async function configurationHashes(): Promise<string> {
 /** Explicit opt-in: empty test session settings only, no inference or cron execution. */
 describe.skipIf(process.env.HERMES_NATIVE_LIVE_TEST !== '1')('live native Hermes controls', () => {
   it('reads actual avatars/catalogues and acknowledges session-only model/effort with saved configuration unchanged', async () => {
-    const before = await configurationHashes();
+    const settings = liveSshConfig();
+    const before = await configurationHashes(settings);
     const service = createHermesService({ connections: [{
-      id: 'native-ssh', label: 'Native contract verification', kind: 'ssh', ssh: {
-        host, user, mode: 'managed', hermesHome: home,
-        repoPath: process.env.HERMES_LIVE_REPO ?? '/srv/fnord/hermes-agent',
-        pythonPath: process.env.HERMES_LIVE_PYTHON ?? '/srv/fnord/hermes-agent/venv/bin/python',
-      },
+      id: 'native-ssh', label: 'Native contract verification', kind: 'ssh', ssh: settings,
     }] });
     try {
       const profiles = await service.listProfiles('native-ssh');
@@ -72,7 +68,7 @@ describe.skipIf(process.env.HERMES_NATIVE_LIVE_TEST !== '1')('live native Hermes
       console.log(JSON.stringify({ profiles: profiles.length, avatars: Object.keys(avatarHashes).length, avatarHashes, catalogueCounts, defaultsPresent: true, modelChanged: changed, effortReadBack: 'high', guardedChoices, inference: false, cronTriggered: false }));
     } finally {
       await service.dispose();
-      expect(await configurationHashes() === before).toBe(true);
+      expect(await configurationHashes(settings) === before).toBe(true);
     }
   }, 180_000);
 });

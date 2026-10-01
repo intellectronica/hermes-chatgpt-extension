@@ -6,10 +6,11 @@ import { Button } from '@openai/apps-sdk-ui/components/Button';
 import { createHostApi, createHttpApi } from './api';
 import { HermesWorkspace } from './App';
 import { ProfileAvatar } from './ProfileAvatar';
+import { VERSION } from '../shared/version';
 
 function EmbeddedApp() {
   const { app, isConnected, error } = useApp({
-    appInfo: { name: 'Hermes', version: '0.2.3' },
+    appInfo: { name: 'Hermes', version: VERSION },
     capabilities: {},
     autoResize: true,
   });

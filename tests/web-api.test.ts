@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ActionError, createHttpApi, resultData } from '../src/web/api';
-import { formatInstant, safeMarkdownUrl } from '../src/web/format';
+import { displayTimezone, formatInstant, safeMarkdownUrl } from '../src/web/format';
 
 describe('UI transport', () => {
   it('reads full UI data from metadata without using model-visible summaries', () => {
@@ -33,9 +33,16 @@ describe('safe presentation', () => {
     expect(safeMarkdownUrl('mailto:hello@example.com')).toBe('mailto:hello@example.com');
   });
 
-  it('uses Zürich display time and keeps unavailable timestamps unknown', () => {
-    expect(formatInstant('2026-09-30T12:00:00Z')).toContain('14:00');
-    expect(formatInstant()).toBe('Unknown');
-    expect(formatInstant('invalid')).toBe('Unknown');
+  it('uses the viewer timezone and keeps unavailable timestamps unknown', () => {
+    try {
+      vi.stubEnv('TZ', 'UTC');
+      expect(displayTimezone()).toBe('UTC');
+      expect(formatInstant('2026-09-30T12:00:00Z')).toContain('12:00');
+      vi.stubEnv('TZ', 'Pacific/Honolulu');
+      expect(displayTimezone()).toBe('Pacific/Honolulu');
+      expect(formatInstant('2026-09-30T12:00:00Z')).toContain('02:00');
+      expect(formatInstant()).toBe('Unknown');
+      expect(formatInstant('invalid')).toBe('Unknown');
+    } finally { vi.unstubAllEnvs(); }
   });
 });

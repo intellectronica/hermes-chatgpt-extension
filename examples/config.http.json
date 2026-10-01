@@ -1,0 +1,11 @@
+{
+  "connections": [
+    {
+      "id": "https-gateway",
+      "label": "Hermes HTTPS gateway",
+      "kind": "http",
+      "baseUrl": "https://hermes.example.org/hermes",
+      "tokenEnv": "HERMES_GATEWAY_SESSION_TOKEN"
+    }
+  ]
+}

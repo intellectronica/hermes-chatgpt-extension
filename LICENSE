@@ -1,22 +1,6 @@
-# Third-party notices
-
-## Hermes desktop brand images
-
-The app icons in `assets/` and embedded brand images in `src/shared/hermes-brand.ts` are unmodified copies of
-`apps/desktop/public/nous-girl.png` and `apps/desktop/public/nous-girl-dark.png`
-from [Hermes Agent](https://github.com/NousResearch/hermes-agent), by Nous Research.
-Source revision: `f3394d96cfbccd407a4bebd73b13473af51b0840`. Hermes distributes
-these assets under its root MIT licence.
-
-The compiled plugin also includes open-source dependencies under their own
-licences. Their complete copyright and licence notices are generated from the
-bundled dependencies in `dist/THIRD_PARTY_LICENSES.txt`; keep that file when
-redistributing the compiled plugin. The extension's MIT licence does not replace
-those third-party notices.
-
 MIT License
 
-Copyright (c) 2025 Nous Research
+Copyright (c) 2026 Hermes ChatGPT Extension contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

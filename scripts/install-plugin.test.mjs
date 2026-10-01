@@ -30,7 +30,7 @@ async function fixture() {
   await mkdir(home, { recursive: true });
   const plugin = {
     $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
-    name: 'hermes-chatgpt-extension', version: '0.1.0', description: 'Hermes fixture',
+    name: 'hermes-chatgpt-extension', version: '0.1.0', license: 'MIT', description: 'Hermes fixture',
     extensions: { 'com.openai': { interface: { displayName: 'Hermes' } } },
   };
   const mcp = {
@@ -44,6 +44,9 @@ async function fixture() {
       policy: { installation: 'AVAILABLE', authentication: 'ON_USE' }, category: 'Productivity' }],
   };
   await writeFile(path.join(root, 'plugin.json'), JSON.stringify(plugin));
+  await writeFile(path.join(root, 'LICENSE'), 'MIT License\nFixture copyright and permission notice.\n');
+  await writeFile(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'Fixture asset notices.\n');
+  await writeFile(path.join(root, 'dist', 'THIRD_PARTY_LICENSES.txt'), 'Fixture dependency notices.\n');
   await writeFile(path.join(root, 'mcp.json'), JSON.stringify(mcp));
   await writeFile(path.join(root, '.agents', 'plugins', 'marketplace.json'), JSON.stringify(marketplace));
   await writeFile(path.join(root, 'skills', 'hermes', 'SKILL.md'),
@@ -79,7 +82,7 @@ test('planning is dry and portable manifests validate', async () => {
   await inspectPackage(root);
   await verifyMarketplace(root);
   const plan = await planInstallation({ root, home });
-  assert.equal(plan.snapshots.length, 6);
+  assert.equal(plan.snapshots.length, 9);
   assert.deepEqual(plan.snapshots.find(file => file.relative === 'assets/nous-girl.png')?.bytes, Buffer.from([137, 80, 78, 71]));
   assert.equal(await exists(path.join(home, '.codex')), false);
   assert.equal(await exists(plan.marketplacePath), false);
@@ -106,6 +109,8 @@ test('install preserves personal marketplace fields and references private confi
   assert.equal(await readFile(path.join(root, 'mcp.json'), 'utf8'), originalMcp);
   assert.equal(await exists(path.join(result.destination, 'hermes.config.json')), false);
   const { server } = await inspectPackage(result.destination);
+  assert.match(await readFile(path.join(result.destination, 'LICENSE'), 'utf8'), /MIT License/);
+  assert.equal(await readFile(path.join(result.destination, 'dist', 'THIRD_PARTY_LICENSES.txt'), 'utf8'), 'Fixture dependency notices.\n');
   assert.deepEqual(server.args, ['${PLUGIN_ROOT}/dist/server.cjs', '--stdio', '--config', config]);
   for (const text of await packageContents(result.destination)) assert.ok(!text.includes(secret));
 });

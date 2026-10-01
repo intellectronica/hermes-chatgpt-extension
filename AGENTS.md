@@ -1,6 +1,6 @@
 # Hermes ChatGPT Extension
 
-Build a private MCP plugin that presents Hermes chat, profiles and cron inspection inside Codex/ChatGPT. Read `docs/proposal.md` and `README.md` before substantial changes.
+Build an MIT-licensed MCP plugin that presents Hermes chat, profiles and scheduled jobs inside Codex. Read `docs/proposal.md` and `README.md` before substantial changes.
 
 ## Scope and architecture
 
@@ -26,10 +26,11 @@ Build a private MCP plugin that presents Hermes chat, profiles and cron inspecti
 
 - Use British English and plain, concise UI copy.
 - Check relevant skills. Use Worktrunk (`wt`) worktrees and topic branches; do not switch branches in a shared checkout.
-- This repository belongs to `intellectronica`, not `Jimini-AI`; Jimini-specific engineering workflows do not apply.
 - Delegation is encouraged for clearly bounded independent work. Give agents distinct file ownership and a shared interface contract.
 - Before finishing code work, run `npm run check`, `npm test`, `npm run build` and relevant browser/integration tests. Wait for GitHub CI on the pushed commit and fix failures.
 - Verify the rendered UI in light/dark and narrow/wide layouts. The target is the familiar ChatGPT/Codex appearance using host tokens and OpenAI UI components.
 - Commit coherent changes, push them and leave a clean worktree. Never claim host embedding or live Hermes behaviour from unit tests alone.
 - Keep `TODO.md` and `docs/verification.md` accurate. Record completed checks, known limitations and exact evidence without secrets.
-- Use `trash`, never `rm`, for file deletion. Do not modify personal Hermes services/configuration while testing this extension.
+- Use `trash`, never `rm`, for file deletion. Use isolated fixtures for ordinary tests. Live tests require explicit target configuration and authorisation. Do not modify existing Hermes services/configuration while testing this extension.
+- Keep documentation, examples and release packages independent of any contributor's machine. Never commit live hosts, private config paths, profile inventories, transcripts or credentials.
+- Release archives use an explicit allowlist and exclude Git history, local configuration, tokens and development outputs. Retain all dependency and asset notices.

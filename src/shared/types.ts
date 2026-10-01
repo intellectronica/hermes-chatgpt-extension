@@ -208,7 +208,6 @@ export interface ConnectionConfig {
     hermesHome?: string;
     pythonPath?: string;
     repoPath?: string;
-    rendezvousDir?: string;
   };
 }
 

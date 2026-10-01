@@ -1,20 +1,23 @@
 {
   "name": "hermes-chatgpt-extension",
-  "version": "0.2.3",
-  "private": true,
-  "description": "A private Codex and ChatGPT MCP app for Hermes chat, profiles and cron inspection",
+  "version": "0.3.0",
+  "description": "An MCP app for Hermes chat, profiles and scheduled jobs inside Codex",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx src/bridge/main.ts --http",
     "start": "node dist/server.cjs --http",
     "mcp": "node dist/server.cjs --stdio",
     "build": "node scripts/build.mjs",
     "check": "tsc --noEmit",
-    "test": "vitest run && node --test scripts/install-plugin.test.mjs",
+    "test": "vitest run && node --test scripts/*.test.mjs",
     "test:watch": "vitest",
     "plugin:verify": "node scripts/verify-plugin.mjs",
-    "plugin:install": "node scripts/install-plugin.mjs"
+    "plugin:install": "node scripts/install-plugin.mjs",
+    "release:package": "node scripts/package-release.mjs",
+    "release:verify": "node scripts/verify-release.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
@@ -41,5 +44,30 @@
     "typescript": "7.0.2",
     "vitest": "5.0.3"
   },
-  "overrides": { "lodash": "4.18.1" }
+  "overrides": {
+    "lodash": "4.18.1"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/intellectronica/hermes-chatgpt-extension.git"
+  },
+  "homepage": "https://github.com/intellectronica/hermes-chatgpt-extension#readme",
+  "bugs": {
+    "url": "https://github.com/intellectronica/hermes-chatgpt-extension/issues"
+  },
+  "files": [
+    "dist/",
+    "assets/",
+    "skills/",
+    "examples/",
+    ".agents/plugins/marketplace.json",
+    "plugin.json",
+    "mcp.json",
+    "scripts/install-plugin.mjs",
+    "scripts/verify-plugin.mjs",
+    "LICENSE",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ]
 }

@@ -1,17 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createHermesService } from '../src/hermes/service.js';
+import { liveSshConfig } from './helpers/live-config';
 
 /** Opt-in metadata-only compatibility check. No chat creation, inference or cron execution. */
 describe.skipIf(process.env.HERMES_LIVE_SSH_TEST !== '1')('live managed SSH connector', () => {
   it('reads profile-owned cron/session metadata and disposes its private backend', async () => {
     const service = createHermesService({ connections: [{
-      id: 'live-ssh', label: 'Live metadata test', kind: 'ssh', ssh: {
-        host: process.env.HERMES_LIVE_SSH_HOST ?? 'fnordistan',
-        user: process.env.HERMES_LIVE_SSH_USER ?? 'fnord', mode: 'managed',
-        repoPath: process.env.HERMES_LIVE_REPO ?? '/srv/fnord/hermes-agent',
-        pythonPath: process.env.HERMES_LIVE_PYTHON ?? '/srv/fnord/hermes-agent/venv/bin/python',
-        hermesHome: process.env.HERMES_LIVE_HOME ?? '/home/fnord/.hermes',
-      },
+      id: 'live-ssh', label: 'Live metadata test', kind: 'ssh', ssh: liveSshConfig(),
     }] });
     try {
       const profiles = await service.listProfiles('live-ssh');

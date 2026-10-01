@@ -10,3 +10,8 @@ test-results/
 .DS_Store
 work/
 hermes.config.json
+release/
+*.token
+secrets/
+credentials/
+hermes.config.*.json

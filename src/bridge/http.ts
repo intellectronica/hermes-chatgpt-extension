@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import type { HermesService } from '../shared/types';
 import { ActionError, dispatchAction, publicError } from './actions';
+import { VERSION } from '../shared/version';
 
 function equals(left: string, right: string): boolean {
   const a = Buffer.from(left); const b = Buffer.from(right);
@@ -52,7 +53,7 @@ export async function startHttpBridge(service: HermesService, html: string, opti
         response.end(html);
         return;
       }
-      if (request.method === 'GET' && route === '/health') { json(response, 200, { status: 'ok', version: '0.2.3' }); return; }
+      if (request.method === 'GET' && route === '/health') { json(response, 200, { status: 'ok', version: VERSION }); return; }
       if (request.method !== 'POST' || route !== '/api/actions') { json(response, 404, { error: { code: 'not_found', message: 'This route does not exist.' } }); return; }
       const cookies = new Map((request.headers.cookie ?? '').split(';').map(value => {
         const i = value.indexOf('='); return [value.slice(0, i).trim(), value.slice(i + 1)];

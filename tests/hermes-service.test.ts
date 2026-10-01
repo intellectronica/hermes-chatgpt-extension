@@ -44,11 +44,13 @@ class Backend {
   pinnedArchivedRows: Record<string, unknown>[] = [];
   sessionRows?: Record<string, unknown>[];
   sessionListQueries: string[] = [];
+  wsPaths: string[] = [];
 
-  constructor() {
+  constructor(private readonly prefix = '') {
     this.server = createServer((request, response) => {
       const url = new URL(request.url!, 'http://127.0.0.1');
       this.reads.push({ path: url.pathname, profile: url.searchParams.get('profile') });
+      if (this.prefix && url.pathname.startsWith(`${this.prefix}/`)) url.pathname = url.pathname.slice(this.prefix.length);
       if (request.headers['x-hermes-session-token'] !== this.token || this.rejectReads) {
         response.writeHead(401).end(JSON.stringify({ error: this.token })); return;
       }
@@ -76,7 +78,9 @@ class Backend {
     });
     this.ws = new WebSocketServer({ server: this.server });
     this.ws.on('connection', (socket, request) => {
-      if (new URL(request.url!, 'http://127.0.0.1').searchParams.get('token') !== this.token) { socket.close(4401); return; }
+      const url = new URL(request.url!, 'http://127.0.0.1');
+      this.wsPaths.push(url.pathname);
+      if (url.pathname !== `${this.prefix}/api/ws` || url.searchParams.get('token') !== this.token) { socket.close(4401); return; }
       this.sockets.add(socket);
       socket.once('close', () => this.sockets.delete(socket));
       socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready', payload: { replay_epoch: this.epoch } } }));
@@ -148,7 +152,7 @@ class Backend {
     this.server.listen(0, '127.0.0.1');
     await once(this.server, 'listening');
     const address = this.server.address();
-    this.url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+    this.url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}${this.prefix}`;
   }
 
   emit(profile: string, type: string, payload: Record<string, unknown> = {}): void {
@@ -175,8 +179,8 @@ class Backend {
 const services: RealHermesService[] = [];
 const backends: Backend[] = [];
 
-async function fixture(showAutomatedChats = false): Promise<{ service: RealHermesService; backend: Backend; ref: ChatRef }> {
-  const backend = new Backend(); await backend.start(); backends.push(backend);
+async function fixture(showAutomatedChats = false, prefix = ''): Promise<{ service: RealHermesService; backend: Backend; ref: ChatRef }> {
+  const backend = new Backend(prefix); await backend.start(); backends.push(backend);
   process.env.HERMES_FIXTURE_TOKEN = backend.token;
   const service = new RealHermesService({ connections: [{ id: 'remote', label: 'Fixture', kind: 'http', baseUrl: backend.url, tokenEnv: 'HERMES_FIXTURE_TOKEN' }], sidebar: { showAutomatedChats } });
   services.push(service);
@@ -188,9 +192,49 @@ afterEach(async () => {
   await Promise.all(services.splice(0).map(service => service.dispose()));
   await Promise.all(backends.splice(0).map(backend => backend.close()));
   delete process.env.HERMES_FIXTURE_TOKEN;
+  delete process.env.HERMES_FIXTURE_SECOND_TOKEN;
 });
 
 describe('Hermes ownership and transport behaviour', () => {
+  it('keeps colliding profile/session IDs owned by their separate instances and credentials', async () => {
+    const first = new Backend('/first');
+    const second = new Backend('/second');
+    second.token = 'other-fixture-session-credential';
+    await Promise.all([first.start(), second.start()]);
+    backends.push(first, second);
+    process.env.HERMES_FIXTURE_TOKEN = first.token;
+    process.env.HERMES_FIXTURE_SECOND_TOKEN = second.token;
+    const service = new RealHermesService({ connections: [
+      { id: 'first', label: 'First', kind: 'http', baseUrl: first.url, tokenEnv: 'HERMES_FIXTURE_TOKEN' },
+      { id: 'second', label: 'Second', kind: 'http', baseUrl: second.url, tokenEnv: 'HERMES_FIXTURE_SECOND_TOKEN' },
+    ] });
+    services.push(service);
+    const firstChat = await service.openChat({ connectionId: 'first', profile: 'default' });
+    const secondChat = await service.openChat({ connectionId: 'second', profile: 'default' });
+    expect(firstChat.id).toBe(secondChat.id);
+    const firstRef = { connectionId: 'first', profile: 'default', sessionId: firstChat.id };
+    const secondRef = { connectionId: 'second', profile: 'default', sessionId: secondChat.id };
+    await service.configureChat(firstRef, { modelId: modelId('fixture', 'alternate'), reasoningEffort: 'low' });
+    expect((await service.getChat(secondRef)).model).toBe('default-model');
+    await service.archiveChat(firstRef, true);
+    expect(await service.listSessions('first', 'default')).toHaveLength(0);
+    expect(await service.listSessions('second', 'default')).toHaveLength(1);
+    expect(second.calls.filter(call => call.method === 'config.set' || call.method === 'session.archive')).toHaveLength(0);
+  });
+  it('preserves a reverse-proxy mount for WebSocket, profile assets and every management route', async () => {
+    const prefix = '/services/hermes';
+    const { service, backend } = await fixture(false, prefix);
+    const profiles = await service.listProfiles('remote');
+    expect(profiles[0].avatar).toBe(backend.avatar.data);
+    await service.listSessions('remote', 'default');
+    await service.listCron('remote', 'all');
+    await service.getCronRuns('remote', 'default', 'same-job');
+    expect(backend.wsPaths).toEqual([`${prefix}/api/ws`]);
+    expect(backend.calls.some(call => call.method === 'profiles.get_asset')).toBe(true);
+    expect(backend.reads.map(read => read.path)).toEqual([
+      `${prefix}/api/profiles/sessions`, `${prefix}/api/cron/jobs`, `${prefix}/api/cron/jobs/same-job/runs`,
+    ]);
+  });
   it('excludes automated sources before the sidebar limit without dropping older human chats', async () => {
     const { service, backend } = await fixture();
     backend.sessionRows = [

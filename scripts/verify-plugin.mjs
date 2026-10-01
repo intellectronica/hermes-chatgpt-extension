@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,6 +17,12 @@ export async function inspectPackage(root = packageRoot, { requireBuild = true }
   assert.ok(plugin.name.length <= 64, 'Plugin name exceeds 64 characters.');
   assert.ok(typeof plugin.version === 'string' && plugin.version.length > 0);
   assert.ok(typeof plugin.description === 'string' && plugin.description.length > 0);
+  assert.equal(plugin.license, 'MIT', 'The extension must declare its MIT licence.');
+  for (const relative of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
+    const stat = await lstat(path.join(root, relative));
+    assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0, `${relative} must be a bundled regular file.`);
+  }
+  assert.match(await readFile(path.join(root, 'LICENSE'), 'utf8'), /^MIT License/);
   const portableFields = new Set([
     '$schema', 'name', 'version', 'description', 'author', 'homepage',
     'repository', 'license', 'keywords', 'extensions',
@@ -51,7 +58,7 @@ export async function inspectPackage(root = packageRoot, { requireBuild = true }
   assert.match(skill, /^---\r?\nname: hermes\r?\ndescription: .+\r?\n---/);
   assert.ok(!(await lstat(skillPath)).isSymbolicLink(), 'Package skills must not be symlinks.');
   if (requireBuild) {
-    for (const relative of ['dist/server.cjs', 'dist/ui.html']) {
+    for (const relative of ['dist/server.cjs', 'dist/ui.html', 'dist/THIRD_PARTY_LICENSES.txt']) {
       const file = await lstat(path.join(root, relative));
       assert.ok(file.isFile() && !file.isSymbolicLink(), `${relative} must be a bundled regular file.`);
       assert.ok(file.size > 0, `${relative} is empty.`);
@@ -79,12 +86,12 @@ export async function verifyMarketplace(root = packageRoot) {
 }
 
 /** Probe the bundled stdio server; never submit prompts or call Hermes write tools. */
-export async function probeServer(root = packageRoot, { timeoutMs = 15_000 } = {}) {
+export async function probeServer(root = packageRoot, { timeoutMs = 15_000, environment = process.env } = {}) {
   const { server } = await inspectPackage(root);
   const expand = (value) => value.replaceAll('${PLUGIN_ROOT}', path.resolve(root));
   const child = spawn(process.execPath, server.args.map(expand), {
     cwd: expand(server.cwd),
-    env: { ...process.env, PLUGIN_ROOT: path.resolve(root) },
+    env: { ...environment, PLUGIN_ROOT: path.resolve(root) },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let buffer = '';
@@ -192,7 +199,12 @@ async function main() {
   console.log('Codex embedding is a separate acceptance check; this script does not install or render the plugin.');
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+function isEntrypoint() {
+  try { return process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href; }
+  catch { return false; }
+}
+
+if (isEntrypoint()) {
   main().catch((error) => {
     console.error(`Plugin verification failed: ${error.message}`);
     process.exitCode = 1;

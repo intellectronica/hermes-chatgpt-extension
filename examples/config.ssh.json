@@ -1,15 +1,15 @@
 {
   "connections": [
     {
-      "id": "remote",
-      "label": "Remote Hermes",
+      "id": "ssh-managed",
+      "label": "Hermes server",
       "kind": "ssh",
       "ssh": {
-        "host": "my-hermes-host",
+        "host": "hermes-server",
         "mode": "managed",
-        "repoPath": "/srv/hermes/hermes-agent",
-        "pythonPath": "/srv/hermes/hermes-agent/.venv/bin/python",
-        "hermesHome": "/home/hermes/.hermes"
+        "repoPath": "~/.hermes/hermes-agent",
+        "pythonPath": "~/.hermes/hermes-agent/venv/bin/python",
+        "hermesHome": "~/.hermes"
       }
     }
   ]

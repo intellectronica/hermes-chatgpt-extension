@@ -1,14 +1,19 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hermes-chatgpt-extension",
-  "version": "0.2.3",
-  "description": "Chat with local or remote Hermes using profile sections, avatars and model/reasoning controls inside Codex.",
+  "version": "0.3.0",
+  "description": "Chat with one or more Hermes instances over SSH or HTTP, switch profiles and inspect scheduled jobs inside Codex.",
   "author": {
     "name": "intellectronica",
     "url": "https://github.com/intellectronica"
   },
   "repository": "https://github.com/intellectronica/hermes-chatgpt-extension",
-  "keywords": ["hermes", "chat", "profiles", "cron"],
+  "keywords": [
+    "hermes",
+    "chat",
+    "profiles",
+    "cron"
+  ],
   "extensions": {
     "com.openai": {
       "interface": {
@@ -20,7 +25,10 @@
         "longDescription": "Work with Hermes through a Codex-styled chat interface. Expand profile sections with Hermes avatars, select a conversation model and reasoning effort, and inspect cron jobs and past runs on local or remote Hermes.",
         "developerName": "intellectronica",
         "category": "Productivity",
-        "capabilities": ["Read", "Write"],
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
         "defaultPrompt": [
           "Open Hermes.",
           "Show the available Hermes connections and profiles.",
@@ -28,5 +36,6 @@
         ]
       }
     }
-  }
+  },
+  "license": "MIT"
 }
