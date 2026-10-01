@@ -6,7 +6,7 @@
 - [x] Rename the scheduled-jobs view to Scheduled.
 - [x] Hide automated chats by default, with a configuration option to include them.
 - [x] Archive chats using Codex's sidebar interaction while preserving their history.
-- [ ] Build, install and verify these refinements; pass GitHub CI.
+- [x] Build, install and verify these refinements; pass GitHub CI (final correction 9d0aa92, run 36867186484).
 
 # Native interface and model controls
 
