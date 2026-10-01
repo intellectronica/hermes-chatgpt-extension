@@ -1,0 +1,16 @@
+{
+  "connections": [
+    {
+      "id": "ssh-attached",
+      "label": "Existing Hermes backend",
+      "kind": "ssh",
+      "tokenFile": "./secrets/hermes-session.token",
+      "ssh": {
+        "host": "hermes-server",
+        "mode": "attach",
+        "remoteHost": "127.0.0.1",
+        "remotePort": 9119
+      }
+    }
+  ]
+}

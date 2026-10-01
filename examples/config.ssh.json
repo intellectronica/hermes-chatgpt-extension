@@ -1,0 +1,16 @@
+{
+  "connections": [
+    {
+      "id": "ssh-managed",
+      "label": "Hermes server",
+      "kind": "ssh",
+      "ssh": {
+        "host": "hermes-server",
+        "mode": "managed",
+        "repoPath": "~/.hermes/hermes-agent",
+        "pythonPath": "~/.hermes/hermes-agent/venv/bin/python",
+        "hermesHome": "~/.hermes"
+      }
+    }
+  ]
+}

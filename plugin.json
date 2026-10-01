@@ -1,0 +1,41 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hermes-chatgpt-extension",
+  "version": "0.3.1",
+  "description": "Chat with one or more Hermes instances over SSH or HTTP, switch profiles and inspect scheduled jobs inside Codex.",
+  "author": {
+    "name": "intellectronica",
+    "url": "https://github.com/intellectronica"
+  },
+  "repository": "https://github.com/intellectronica/hermes-chatgpt-extension",
+  "keywords": [
+    "hermes",
+    "chat",
+    "profiles",
+    "cron"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Hermes",
+        "logo": "./assets/nous-girl.png",
+        "logoDark": "./assets/nous-girl-dark.png",
+        "composerIcon": "./assets/nous-girl.png",
+        "shortDescription": "Hermes chat, profiles and cron inspection",
+        "longDescription": "Work with Hermes through a Codex-styled chat interface. Expand profile sections with Hermes avatars, select a conversation model and reasoning effort, and inspect cron jobs and past runs on local or remote Hermes.",
+        "developerName": "intellectronica",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "defaultPrompt": [
+          "Open Hermes.",
+          "Show the available Hermes connections and profiles.",
+          "Inspect the cron jobs for my selected Hermes profile."
+        ]
+      }
+    }
+  },
+  "license": "MIT"
+}

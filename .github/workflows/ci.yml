@@ -1,0 +1,41 @@
+name: Extension checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      HERMES_LIVE_SSH_TEST: '0'
+      HERMES_NATIVE_LIVE_TEST: '0'
+    strategy:
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm run plugin:verify
+      - run: npm run release:package
+      - run: npm run release:verify
+      - run: npm audit --omit=dev
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hermes-extension-node-${{ matrix.node }}
+          path: |
+            release/*.zip
+            release/SHA256SUMS
+          retention-days: 14

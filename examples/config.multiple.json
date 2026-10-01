@@ -1,0 +1,44 @@
+{
+  "sidebar": {
+    "showAutomatedChats": false
+  },
+  "connections": [
+    {
+      "id": "local",
+      "label": "Local Hermes",
+      "kind": "http",
+      "baseUrl": "http://127.0.0.1:9119",
+      "tokenEnv": "HERMES_LOCAL_TOKEN"
+    },
+    {
+      "id": "ssh-managed",
+      "label": "Hermes development server",
+      "kind": "ssh",
+      "ssh": {
+        "host": "hermes-development",
+        "mode": "managed",
+        "repoPath": "~/.hermes/hermes-agent",
+        "pythonPath": "~/.hermes/hermes-agent/venv/bin/python",
+        "hermesHome": "~/.hermes"
+      }
+    },
+    {
+      "id": "ssh-attached",
+      "label": "Existing Hermes server",
+      "kind": "ssh",
+      "tokenFile": "./secrets/server-session.token",
+      "ssh": {
+        "host": "hermes-existing",
+        "mode": "attach",
+        "remotePort": 9119
+      }
+    },
+    {
+      "id": "https-gateway",
+      "label": "Hermes HTTPS gateway",
+      "kind": "http",
+      "baseUrl": "https://hermes.example.org/hermes",
+      "tokenEnv": "HERMES_GATEWAY_SESSION_TOKEN"
+    }
+  ]
+}

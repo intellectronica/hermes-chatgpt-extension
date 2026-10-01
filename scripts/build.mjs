@@ -1,0 +1,69 @@
+import { build } from 'esbuild';
+import postcss from 'postcss';
+import tailwind from '@tailwindcss/postcss';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { Script } from 'node:vm';
+import { JSDOM } from 'jsdom';
+import { collectBundleLicenses } from './bundle-licenses.mjs';
+
+await mkdir('dist', { recursive: true });
+const result = await build({
+  entryPoints: ['src/web/main.tsx'],
+  bundle: true,
+  write: false,
+  outdir: 'dist/web',
+  format: 'iife',
+  platform: 'browser',
+  conditions: ['browser', 'style', 'import'],
+  target: ['chrome120'],
+  minify: true,
+  metafile: true,
+  legalComments: 'external',
+  define: { 'process.env.NODE_ENV': '"production"' },
+  loader: { '.woff': 'dataurl', '.woff2': 'dataurl', '.ttf': 'dataurl', '.eot': 'dataurl', '.svg': 'dataurl' },
+});
+const js = result.outputFiles.find(file => file.path.endsWith('.js'))?.text;
+const css = result.outputFiles.find(file => file.path.endsWith('.css'))?.text ?? '';
+if (!js) throw new Error('The UI build did not produce JavaScript.');
+const compiled = await postcss([tailwind({ base: process.cwd(), optimize: true })]).process(css, { from: resolve('src/web/styles.css') });
+const template = await readFile('src/web/index.html', 'utf8');
+const notices = await readFile('THIRD_PARTY_NOTICES.md', 'utf8');
+const html = template
+  .replace(/<script[^>]*src=["'][^"']+["'][^>]*><\/script>/g, '')
+  .replace('</head>', () => `<!--\n${notices.replaceAll('--', '—')}\n--><style>${compiled.css.replaceAll('</style', '<\\/style')}</style></head>`)
+  .replace('</body>', () => `<script>${js.replaceAll('</script', '<\\/script')}</script></body>`);
+// Replacement strings treat vendor code's $&/$' sequences as template directives.
+// Parse the final HTML and validate its actual script, catching broken inline bundling.
+const document = new JSDOM(html).window.document;
+if (document.scripts.length !== 1 || document.scripts[0].src) throw new Error('The UI must contain one self-contained script.');
+new Script(document.scripts[0].textContent ?? '', { filename: 'ui.html' });
+const server = await build({
+  entryPoints: ['src/bridge/main.ts'],
+  bundle: true,
+  write: false,
+  outfile: 'dist/server.cjs',
+  format: 'cjs',
+  platform: 'node',
+  target: 'node22',
+  sourcemap: false,
+  minify: false,
+  metafile: true,
+  legalComments: 'external',
+});
+const bridge = server.outputFiles.find(file => file.path.endsWith('server.cjs'))?.text;
+if (!bridge) throw new Error('The bridge build did not produce JavaScript.');
+const legalComments = output => output.outputFiles.filter(file => file.path.endsWith('.LEGAL.txt')).map(file => file.text).join('\n');
+const licenses = await collectBundleLicenses({
+  bundles: [
+    { name: 'UI', metafile: result.metafile, legalComments: legalComments(result) },
+    { name: 'server', metafile: server.metafile, legalComments: legalComments(server) },
+  ],
+  css: compiled.css,
+});
+// Write distributable bundles only after every contributing dependency has a
+// complete notice. Metafiles stay in memory, so they expose no local build paths.
+await writeFile('dist/THIRD_PARTY_LICENSES.txt', licenses.text);
+await writeFile('dist/ui.html', html);
+await writeFile('dist/server.cjs', bridge);
+process.stdout.write(`Built the bridge and single-file UI (${Math.round(Buffer.byteLength(html) / 1024)} KiB); preserved ${licenses.packageCount} dependency notices and ${licenses.referencedFontCount} external font references.\n`);
